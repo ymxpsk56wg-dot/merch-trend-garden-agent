@@ -23,6 +23,10 @@ const PRINTFUL_API_KEY = process.env.PRINTFUL_API_KEY || "";
 const SHOPIFY_STORE_URL = process.env.SHOPIFY_STORE_URL || "";
 const SHOPIFY_ADMIN_TOKEN = process.env.SHOPIFY_ADMIN_TOKEN || "";
 const GELATO_API_KEY = process.env.GELATO_API_KEY || "";
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const OPENAI_AGENT_MODE = process.env.OPENAI_AGENT_MODE || "manual";
+const OPENAI_AGENT_MAX_OUTPUT_TOKENS = Number(process.env.OPENAI_AGENT_MAX_OUTPUT_TOKENS || 700);
 
 const productCategories = [
   {
@@ -116,6 +120,15 @@ function sourceCatalog() {
       signal: "Creates a Figma concept board from the manager direction, sales proxy, design cues, and marketing plan",
       setup: "Install the generated plugin from /figma-plugin/manifest.json. Optional REST read/export can use FIGMA_ACCESS_TOKEN and FIGMA_FILE_KEY.",
       where: "Design workflow",
+    },
+    {
+      id: "openai-agents",
+      name: "OpenAI agent runtime",
+      status: OPENAI_API_KEY ? "active" : "optional",
+      statusLabel: OPENAI_API_KEY ? `Key found, mode=${OPENAI_AGENT_MODE}` : "Optional key",
+      signal: "AI-authored Demand, Sales, Design, Marketing, Risk, and Manager reports",
+      setup: `Set OPENAI_API_KEY in Railway. Current defaults protect usage: mode=${OPENAI_AGENT_MODE}, model=${OPENAI_MODEL}, max_output_tokens=${OPENAI_AGENT_MAX_OUTPUT_TOKENS}.`,
+      where: "Agent brain",
     },
     {
       id: "printify",
@@ -842,6 +855,189 @@ function buildDesignerBrief(title, product, popularityReasons, graphicElements) 
   return `Design brief for ${product}: create an original merch concept around "${title}". The reason to test it is ${popularityReasons[0].toLowerCase()} Start with ${graphicElements[0].replace("Primary motif: ", "").toLowerCase()} Keep the design ownable, simple enough for print, and clear without relying on protected marks.`;
 }
 
+function shouldRunAiAgents(trigger) {
+  if (!OPENAI_API_KEY || OPENAI_AGENT_MODE === "off") {
+    return false;
+  }
+
+  if (OPENAI_AGENT_MODE === "all") {
+    return true;
+  }
+
+  return trigger === "manual";
+}
+
+function compactAgentInput(review, salesSignal) {
+  return {
+    title: review.title,
+    product: review.product,
+    category: review.category,
+    market: review.market,
+    score: review.score,
+    evidence: review.evidence,
+    source: review.source,
+    reasons: (review.popularityReasons || []).slice(0, 4),
+    graphics: (review.graphicElements || []).slice(0, 4),
+    watchouts: (review.watchouts || []).slice(0, 4),
+    sales: {
+      status: salesSignal?.status,
+      summary: salesSignal?.summary,
+      listingCount: salesSignal?.listingCount,
+      averagePrice: salesSignal?.averagePrice,
+      tags: (salesSignal?.topTags || []).slice(0, 6),
+      listings: (salesSignal?.topListings || []).slice(0, 3).map((listing) => ({
+        title: listing.title,
+        price: listing.price,
+        favoriteCount: listing.favoriteCount,
+      })),
+    },
+    outlets: outletCatalog(review.title, review.product).map((outlet) => ({
+      name: outlet.name,
+      status: outlet.status,
+      nextStep: outlet.nextStep,
+    })),
+  };
+}
+
+function safeArray(value, fallback = []) {
+  return Array.isArray(value) ? value.filter(Boolean).map((item) => String(item).trim()).filter(Boolean) : fallback;
+}
+
+async function runAiAgentSynthesis(review, salesSignal, trigger) {
+  if (!shouldRunAiAgents(trigger)) {
+    review.agentRuntime = {
+      status: OPENAI_API_KEY ? "standby" : "missing-key",
+      mode: OPENAI_AGENT_MODE,
+      model: OPENAI_MODEL,
+      reason: OPENAI_API_KEY
+        ? "OpenAI agents are configured for manual runs only to control token usage."
+        : "OPENAI_API_KEY is not configured.",
+    };
+    return review;
+  }
+
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      demandReport: { type: "string" },
+      salesReport: { type: "string" },
+      designReport: { type: "string" },
+      marketingReport: { type: "string" },
+      riskReport: { type: "string" },
+      managerDecision: { type: "string" },
+      popularityReasons: { type: "array", items: { type: "string" }, maxItems: 5 },
+      graphicElements: { type: "array", items: { type: "string" }, maxItems: 5 },
+      marketingPlan: { type: "array", items: { type: "string" }, maxItems: 5 },
+      workplaceRecommendations: { type: "array", items: { type: "string" }, maxItems: 5 },
+      watchouts: { type: "array", items: { type: "string" }, maxItems: 5 },
+      fruitScore: { type: "number" },
+      shouldProceed: { type: "boolean" },
+    },
+    required: [
+      "demandReport",
+      "salesReport",
+      "designReport",
+      "marketingReport",
+      "riskReport",
+      "managerDecision",
+      "popularityReasons",
+      "graphicElements",
+      "marketingPlan",
+      "workplaceRecommendations",
+      "watchouts",
+      "fruitScore",
+      "shouldProceed",
+    ],
+  };
+
+  const input = [
+    {
+      role: "system",
+      content:
+        "You are the manager of a merch AI workplace. Produce concise, practical department reports for trend research, sales validation, design direction, marketing rollout, risk review, and a manager decision. Keep all design guidance original and avoid copying protected names, logos, characters, lyrics, or source artwork.",
+    },
+    {
+      role: "user",
+      content: JSON.stringify(compactAgentInput(review, salesSignal)),
+    },
+  ];
+
+  try {
+    const response = await fetchWithTimeout(
+      "https://api.openai.com/v1/responses",
+      {
+        method: "POST",
+        timeoutMs: 20000,
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: OPENAI_MODEL,
+          input,
+          max_output_tokens: OPENAI_AGENT_MAX_OUTPUT_TOKENS,
+          text: {
+            format: {
+              type: "json_schema",
+              name: "merch_agent_report",
+              schema,
+              strict: true,
+            },
+          },
+        }),
+      },
+      "OpenAI agent runtime",
+    );
+    const payload = await response.json();
+
+    if (!response.ok) {
+      throw new Error(payload.error?.message || payload.message || `HTTP ${response.status}`);
+    }
+
+    const text = payload.output_text || payload.output?.flatMap((item) => item.content || [])
+      .find((item) => item.type === "output_text")?.text;
+    const agentReport = JSON.parse(text || "{}");
+    const aiMarketingPlan = safeArray(agentReport.marketingPlan);
+
+    review.popularityReasons = safeArray(agentReport.popularityReasons, review.popularityReasons).slice(0, 5);
+    review.graphicElements = safeArray(agentReport.graphicElements, review.graphicElements).slice(0, 5);
+    review.watchouts = safeArray(agentReport.watchouts, review.watchouts).slice(0, 5);
+    review.workplaceRecommendations = safeArray(
+      agentReport.workplaceRecommendations,
+      review.workplaceRecommendations,
+    ).slice(0, 5);
+    review.aiReports = {
+      demand: compactText(agentReport.demandReport, 220),
+      sales: compactText(agentReport.salesReport, 220),
+      design: compactText(agentReport.designReport, 220),
+      marketing: compactText(agentReport.marketingReport, 220),
+      risk: compactText(agentReport.riskReport, 220),
+      manager: compactText(agentReport.managerDecision, 240),
+      shouldProceed: Boolean(agentReport.shouldProceed),
+    };
+    review.aiMarketingPlan = aiMarketingPlan;
+    review.score = Math.max(1, Math.min(100, Math.round(Number(agentReport.fruitScore) || review.score)));
+    review.summary = review.aiReports.manager || review.summary;
+    review.agentRuntime = {
+      status: "active",
+      mode: OPENAI_AGENT_MODE,
+      model: OPENAI_MODEL,
+      maxOutputTokens: OPENAI_AGENT_MAX_OUTPUT_TOKENS,
+    };
+    return review;
+  } catch (error) {
+    console.error(`[openai-agents] ${error.message}`);
+    review.agentRuntime = {
+      status: "fallback",
+      mode: OPENAI_AGENT_MODE,
+      model: OPENAI_MODEL,
+      error: error.message,
+    };
+    return review;
+  }
+}
+
 function buildDesignPlan(review, salesSignal) {
   const projectType = /cup|mug|tumbler|drink/i.test(review.product)
     ? "drinkware"
@@ -873,10 +1069,12 @@ function buildDesignPlan(review, salesSignal) {
     figmaConnection,
     salesOutlets,
     departments: {
-      demand: compactText(topReason, 160),
-      sales: salesSummary,
-      design: compactText(topVisualCue, 160),
-      risk: review.watchouts?.[0] || "Avoid protected names, logos, lyrics, and source artwork.",
+      demand: review.aiReports?.demand || compactText(topReason, 160),
+      sales: review.aiReports?.sales || salesSummary,
+      design: review.aiReports?.design || compactText(topVisualCue, 160),
+      marketing: review.aiReports?.marketing || "",
+      risk: review.aiReports?.risk || review.watchouts?.[0] || "Avoid protected names, logos, lyrics, and source artwork.",
+      manager: review.aiReports?.manager || "",
     },
     palette: ["#00ff66", "#ddffe9", "#c6ff6b", "#07140c", "#ff4f6d"],
     composition: [
@@ -886,13 +1084,15 @@ function buildDesignPlan(review, salesSignal) {
       "Two-to-four print colors with one accent color reserved for urgency or proof.",
       "Thick outline or boxed type treatment so the idea works as a thumbnail and on product mockups.",
     ],
-    marketingPlan: [
-      `Positioning: ${proofLevel}; lead with the trend mood, not protected names.`,
-      `Audience test: buyers already searching "${review.category}" plus marketplace tags: ${topTags}.`,
-      `Outlet ladder: start with ${salesOutlets[0].name}, validate POD with ${salesOutlets[1].name}, and keep Etsy/eBay as demand research until approved.`,
-      "Offer ladder: launch one hero tee or mug, then adapt the same visual system to sticker/tote variants if the signal holds.",
-      "Creative test: produce two typography variations and one illustrated-symbol variation before committing production time.",
-    ],
+    marketingPlan: review.aiMarketingPlan?.length
+      ? review.aiMarketingPlan.slice(0, 5)
+      : [
+          `Positioning: ${proofLevel}; lead with the trend mood, not protected names.`,
+          `Audience test: buyers already searching "${review.category}" plus marketplace tags: ${topTags}.`,
+          `Outlet ladder: start with ${salesOutlets[0].name}, validate POD with ${salesOutlets[1].name}, and keep Etsy/eBay as demand research until approved.`,
+          "Offer ladder: launch one hero tee or mug, then adapt the same visual system to sticker/tote variants if the signal holds.",
+          "Creative test: produce two typography variations and one illustrated-symbol variation before committing production time.",
+        ],
     rollout: [
       "Research worker validates demand and current geography.",
       "Sales worker checks Etsy/eBay proxies plus Shopify, Printify, Printful, Gelato, and Amazon Merch outlet fit.",
@@ -1009,9 +1209,17 @@ async function handleReview(request, response) {
     const article = articles[cursor % articles.length];
     cursor += 1;
 
+    const trigger = force ? "manual" : url.searchParams.get("trigger") || "scheduled";
     const baseReview = reviewTrend(article);
     const salesSignal = await fetchEtsySalesSignal(baseReview.title, baseReview.product);
-    const review = enrichReviewWithSalesAndDesign(baseReview, salesSignal);
+    const review = await runAiAgentSynthesis(
+      enrichReviewWithSalesAndDesign(baseReview, salesSignal),
+      salesSignal,
+      trigger,
+    );
+    review.designPlan = buildDesignPlan(review, salesSignal);
+    review.salesOutlets = review.designPlan.salesOutlets;
+    review.figmaConnection = review.designPlan.figmaConnection;
     latestDesignBrief = {
       review,
       salesSignal,

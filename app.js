@@ -291,7 +291,7 @@ function renderImageResult(review) {
 }
 
 function marketingPlan(review) {
-  return review.designPlan?.marketingPlan || [
+  return review.aiMarketingPlan || review.designPlan?.marketingPlan || [
     `Lead with ${review.category || "the trend"} buyers and validate copy against current demand.`,
     "Launch one hero design first, then expand to secondary products if the signal holds.",
     "Use marketplace tags and source links to write product titles without copying protected terms.",
@@ -384,13 +384,13 @@ function renderSalesOutlets(review) {
 }
 
 function renderAgentReports(review, entry) {
-  const demandLine = review.popularityReasons?.[0] || review.signals?.[0] || "Demand signal is still forming.";
+  const demandLine = review.aiReports?.demand || review.popularityReasons?.[0] || review.signals?.[0] || "Demand signal is still forming.";
   const marketLine = `Market: ${review.market || entry.market || "US"} via ${sourceLabel(entry.source)}. ${review.evidence || "Trend source is active."}`;
-  const salesLine = review.salesSignal?.summary || "Sales proxy is waiting for Etsy configuration.";
-  const designLine = review.designPlan?.direction || review.graphicElements?.[0] || "Design direction is still forming.";
-  const marketingLine = marketingPlan(review)[0];
+  const salesLine = review.aiReports?.sales || review.salesSignal?.summary || "Sales proxy is waiting for Etsy configuration.";
+  const designLine = review.aiReports?.design || review.designPlan?.direction || review.graphicElements?.[0] || "Design direction is still forming.";
+  const marketingLine = review.aiReports?.marketing || marketingPlan(review)[0];
   const outletCount = review.salesOutlets?.length || review.designPlan?.salesOutlets?.length || 0;
-  const riskLine = review.watchouts?.[0] || "No major watchout detected, but review saturation and IP before launch.";
+  const riskLine = review.aiReports?.risk || review.watchouts?.[0] || "No major watchout detected, but review saturation and IP before launch.";
 
   demandRoomStatus.textContent = shortText(review.category, "Demand signal", 36);
   marketRoomStatus.textContent = `${review.market || entry.market || "US"} market`;
@@ -398,7 +398,10 @@ function renderAgentReports(review, entry) {
     review.salesSignal?.status === "active"
       ? `${review.salesSignal.topListings?.length || 0} Etsy proxies`
       : "Needs Etsy key";
-  designRoomStatus.textContent = review.designPlan?.proofLevel || `${review.graphicElements?.length || 0} visual cues`;
+  designRoomStatus.textContent =
+    review.agentRuntime?.status === "active"
+      ? "AI design report"
+      : review.designPlan?.proofLevel || `${review.graphicElements?.length || 0} visual cues`;
   marketingRoomStatus.textContent = `${marketingPlan(review).length} launch actions`;
   riskRoomStatus.textContent = `${review.watchouts?.length || 0} watchouts`;
 
@@ -421,11 +424,12 @@ function renderManagerDecision(review, entry) {
   boardScore.textContent = `${fruitScore}`;
   managerDirective.textContent = `${fruitScore}/100: ${shortText(product, "merch project", 46)}`;
   managerReason.textContent =
-    fruitTier === "high"
+    review.aiReports?.manager ||
+    (fruitTier === "high"
       ? `Proceed: agents found a strong ${category} opportunity for ${market}.`
       : fruitTier === "medium"
         ? `Test carefully: ${category} has useful signal, but sales proof or risk checks need more confidence.`
-        : `Hold for scouting: ${category} needs stronger proof before production.`;
+        : `Hold for scouting: ${category} needs stronger proof before production.`);
 
   addManagerFeed(`${fruitTier.toUpperCase()} priority on ${product}: ${managerReason.textContent}`);
   if (review.workplaceRecommendations?.[0]) {
