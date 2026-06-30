@@ -1,0 +1,15 @@
+{
+  "name": "merch-trend-review-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A free trend-source review dashboard for t-shirts, cups, and merch designs.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "share": "npx --yes localtunnel --port 4173",
+    "test:api": "node scripts/test-trends.js"
+  }
+}

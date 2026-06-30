@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: merch-trend-garden-agent
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: TREND_GEO
+        value: US
+      - key: TREND_LIMIT
+        value: "12"

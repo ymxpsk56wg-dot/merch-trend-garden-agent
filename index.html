@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A pixel-art office where an AI agent reviews popular merch design trends every 10 minutes and posts them to a digital board."
+    />
+    <title>Merch Trend Office Agent</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Press+Start+2P&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="trend-sidebar" aria-label="Posted trend reviews">
+        <div class="sidebar-head">
+          <div>
+            <p class="eyebrow">Posted board</p>
+            <h1>Trend Garden</h1>
+          </div>
+          <div class="status-pill" id="statusPill">
+            <span class="pulse" aria-hidden="true"></span>
+            <span id="statusText">Ready</span>
+          </div>
+        </div>
+
+        <div class="sidebar-actions">
+          <button class="primary-button" id="reviewNowButton" type="button">
+            <span class="button-icon" aria-hidden="true">!</span>
+            Review now
+          </button>
+        </div>
+
+        <dl class="sidebar-stats">
+          <div>
+            <dt>Reviewed</dt>
+            <dd id="reviewCount">0</dd>
+          </div>
+          <div>
+            <dt>Next auto run</dt>
+            <dd id="nextRun">--:--</dd>
+          </div>
+          <div>
+            <dt>Countdown</dt>
+            <dd id="countdownValue">10:00</dd>
+          </div>
+        </dl>
+
+        <div class="progress-track" aria-hidden="true">
+          <span class="progress-fill" id="progressFill"></span>
+        </div>
+
+        <section class="posted-list" aria-label="Trend posts visible on the office board">
+          <div class="list-title">Office board posts</div>
+          <ol id="eventLog"></ol>
+        </section>
+
+        <section class="api-source-list" aria-label="Trend research API sources">
+          <div class="list-title">Research access points</div>
+          <ol id="apiSourceList"></ol>
+        </section>
+      </aside>
+
+      <section class="workplace" aria-label="Pixel-art AI agent workplace">
+        <header class="topbar">
+          <div class="brand-lockup">
+            <span class="brand-mark" aria-hidden="true"></span>
+            <div>
+              <span class="brand-name">Merch Trend Garden Agent</span>
+              <span class="brand-subtitle">Every 10 minutes: research hut, market signal, board post</span>
+            </div>
+          </div>
+          <div class="run-state" id="agentTask">Standing by</div>
+        </header>
+
+        <section class="office-stage">
+          <div class="pixel-office" id="officeScene" data-agent-state="idle">
+            <div class="office-grid" aria-hidden="true"></div>
+            <div class="stone-path path-main" aria-hidden="true"></div>
+            <div class="stone-path path-cross" aria-hidden="true"></div>
+            <div class="fence fence-top" aria-hidden="true"></div>
+            <div class="fence fence-bottom" aria-hidden="true"></div>
+            <div class="garden-tree tree-left" aria-hidden="true"></div>
+            <div class="garden-tree tree-right" aria-hidden="true"></div>
+            <div class="garden-rock rock-left" aria-hidden="true"></div>
+            <div class="garden-rock rock-right" aria-hidden="true"></div>
+            <div class="mushroom mushroom-left" aria-hidden="true"></div>
+            <div class="mushroom mushroom-right" aria-hidden="true"></div>
+            <div class="wildflowers flowers-left" aria-hidden="true"></div>
+            <div class="wildflowers flowers-right" aria-hidden="true"></div>
+
+            <div class="board office-object" aria-label="Digital trend board">
+              <div class="board-header">
+                <span>Live Board</span>
+                <span id="boardScore">--</span>
+              </div>
+              <div class="board-post">
+                <span id="boardCategory">Waiting</span>
+                <strong id="boardTitle">No trend posted yet</strong>
+                <small id="boardProduct">The agent will post the next review here.</small>
+              </div>
+            </div>
+
+            <div class="market-hut office-object" aria-hidden="true">
+              <span class="hut-roof"></span>
+              <span class="hut-wall"></span>
+              <span class="hut-door"></span>
+              <span class="hut-window hut-window-left"></span>
+              <span class="hut-window hut-window-right"></span>
+            </div>
+
+            <div class="desk office-object" aria-label="Agent desk">
+              <div class="monitor">
+                <span id="monitorText">TREND DB</span>
+              </div>
+              <div class="keyboard" aria-hidden="true"></div>
+              <div class="chair" aria-hidden="true"></div>
+            </div>
+
+            <div class="plant office-object" aria-hidden="true">
+              <span></span>
+            </div>
+            <div class="file-cabinet office-object" aria-hidden="true"></div>
+            <div class="market-crate office-object" aria-hidden="true"></div>
+
+            <div class="agent-shadow" aria-hidden="true"></div>
+            <div class="trend-card-carry" id="carryCard" aria-hidden="true">TREND</div>
+            <div class="agent" id="agentSprite" aria-label="AI agent character">
+              <span class="agent-head"></span>
+              <span class="agent-body"></span>
+              <span class="agent-arm agent-arm-left"></span>
+              <span class="agent-arm agent-arm-right"></span>
+              <span class="agent-leg agent-leg-left"></span>
+              <span class="agent-leg agent-leg-right"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="review-console" aria-label="Current trend review details">
+          <div class="console-header">
+            <div>
+              <p class="eyebrow">Current post</p>
+              <h2 id="listingTitle">Waiting for first trend review</h2>
+            </div>
+            <a id="listingLink" class="source-link" href="#" target="_blank" rel="noreferrer">
+              Open source
+            </a>
+          </div>
+
+          <div class="review-layout">
+            <section class="image-result-panel" aria-label="Trend image result">
+              <a id="imageResultLink" class="image-result-frame" href="#" target="_blank" rel="noreferrer">
+                <img id="imageResult" alt="" hidden />
+                <span id="imageResultFallback">No source image yet</span>
+              </a>
+              <div>
+                <h3>Image result</h3>
+                <p id="imageResultCaption">The agent will show the source image when the trend feed provides one.</p>
+              </div>
+            </section>
+
+            <dl class="score-grid">
+              <div>
+                <dt>Review score</dt>
+                <dd id="reviewScore">--</dd>
+              </div>
+              <div>
+                <dt>Product</dt>
+                <dd id="listingPrice">--</dd>
+              </div>
+              <div>
+                <dt>Source</dt>
+                <dd id="sourceMode">--</dd>
+              </div>
+              <div>
+                <dt>Where</dt>
+                <dd id="marketText">--</dd>
+              </div>
+            </dl>
+
+            <div class="insight-block">
+              <h3>Designer brief</h3>
+              <p id="summaryText">
+                The agent will walk to the desk, review a top trend, then post the design read on
+                the office board and sidebar.
+              </p>
+            </div>
+
+            <div class="insight-columns">
+              <section>
+                <h3>Why it is popular</h3>
+                <ul id="reasonList"></ul>
+              </section>
+              <section>
+                <h3>Graphical elements</h3>
+                <ul id="elementList"></ul>
+              </section>
+              <section>
+                <h3>Research links</h3>
+                <ul id="sourceLinkList" class="source-link-list"></ul>
+              </section>
+              <section>
+                <h3>Watchouts</h3>
+                <ul id="watchoutList"></ul>
+              </section>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
