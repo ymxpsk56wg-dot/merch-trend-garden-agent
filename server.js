@@ -723,9 +723,9 @@ function reviewTrend(article) {
   const productContext = `${category.category} / ${product}`;
   const popularityReasons = inferPopularityReasons(article, text, productContext);
   const graphicElements = inferGraphicElements(title, text, product);
-  const imageResults = buildImageResults(article);
   const sourceLinks = buildSourceLinks(title, article);
   const specificResearch = buildSpecificResearch(article, product, category.category);
+  const imageResults = buildImageResults(article, specificResearch);
   const signals = [];
   const watchouts = [];
   let score = 58;
@@ -813,18 +813,55 @@ function reviewTrend(article) {
   };
 }
 
-function buildImageResults(article) {
+function svgText(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function visualReferenceImage(title, specificResearch) {
+  const colors = specificResearch.referenceColors || ["#101827", "#f8f0db", "#b83a32", "#d8a847", "#2f5f52"];
+  const copy = specificResearch.primaryCopy || "MERCH TEST";
+  const subject = specificResearch.designSubject || title;
+  const motif = specificResearch.visualTreatment || "original merch motif";
+  const paletteRects = colors.map((color, index) => (
+    `<rect x="${72 + index * 76}" y="508" width="56" height="56" rx="8" fill="${svgText(color)}" />`
+  )).join("");
+  const encodedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800" role="img" aria-label="${svgText(title)} visual reference board">
+  <rect width="1200" height="800" fill="${svgText(colors[1] || "#f8f0db")}"/>
+  <rect x="42" y="42" width="1116" height="716" rx="24" fill="${svgText(colors[0] || "#101827")}"/>
+  <rect x="84" y="84" width="492" height="632" rx="18" fill="${svgText(colors[1] || "#f8f0db")}"/>
+  <circle cx="330" cy="284" r="150" fill="${svgText(colors[2] || "#b83a32")}"/>
+  <path d="M214 314c70-86 145-126 226-119 49 4 90 23 122 57-62 18-112 46-151 84-55 53-113 78-197 78Z" fill="${svgText(colors[3] || "#d8a847")}" opacity=".92"/>
+  <path d="M226 392h210" stroke="${svgText(colors[0] || "#101827")}" stroke-width="18" stroke-linecap="round"/>
+  <path d="M252 434h158" stroke="${svgText(colors[0] || "#101827")}" stroke-width="12" stroke-linecap="round" opacity=".78"/>
+  <text x="642" y="152" fill="${svgText(colors[3] || "#d8a847")}" font-family="Arial Black, Arial, sans-serif" font-size="34" font-weight="900" letter-spacing="2">DESIGN WORK ORDER</text>
+  <text x="642" y="228" fill="${svgText(colors[1] || "#f8f0db")}" font-family="Arial Black, Arial, sans-serif" font-size="62" font-weight="900">${svgText(copy).slice(0, 28)}</text>
+  <text x="642" y="294" fill="${svgText(colors[1] || "#f8f0db")}" font-family="Arial, sans-serif" font-size="30" font-weight="700">${svgText(subject).slice(0, 52)}</text>
+  <foreignObject x="642" y="340" width="430" height="126">
+    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family:Arial,sans-serif;font-size:24px;line-height:1.28;color:${svgText(colors[1] || "#f8f0db")}">${svgText(motif).slice(0, 168)}</div>
+  </foreignObject>
+  <text x="72" y="486" fill="${svgText(colors[1] || "#f8f0db")}" font-family="Arial Black, Arial, sans-serif" font-size="26" font-weight="900">REFERENCE PALETTE</text>
+  ${paletteRects}
+  <rect x="642" y="508" width="390" height="74" rx="12" fill="${svgText(colors[2] || "#b83a32")}"/>
+  <text x="672" y="556" fill="${svgText(colors[1] || "#f8f0db")}" font-family="Arial Black, Arial, sans-serif" font-size="28" font-weight="900">MAKE THIS DESIGN</text>
+</svg>`;
+
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(encodedSvg)}`;
+}
+
+function buildImageResults(article, specificResearch) {
   if (!article.image) {
     const title = article.title || "Trend visual research";
-    const encoded = encodeURIComponent(`${title} merch design trend`);
-    const imageText = encodeURIComponent(compactText(title, 42));
 
     return [
       {
-        title: `Visual research search: ${title}`,
-        url: `https://placehold.co/900x600/07140c/00ff66/png?text=${imageText}`,
-        source: "Visual research prompt",
-        link: `https://www.google.com/search?tbm=isch&q=${encoded}`,
+        title: `Embedded reference board: ${specificResearch?.designSubject || title}`,
+        url: visualReferenceImage(title, specificResearch || {}),
+        source: "Generated reference board from the work order",
+        link: article.url && article.url !== "#" ? article.url : "",
       },
     ];
   }
@@ -924,8 +961,11 @@ function topicProfile(title, text) {
       angle: "Make the design feel like a cozy reader badge rather than a generic quote graphic.",
       motif: "stacked books, annotated page tabs, tiny stars, tea or coffee cup, ribbon bookmark, and an arched club seal.",
       palette: "cream paper, oxblood, forest green, muted lavender, and one metallic-gold accent.",
+      colors: ["#2f3a27", "#fbf3df", "#7b1f2a", "#b79a56", "#8a78a8"],
       type: "serif headline paired with small handwritten marginalia or library-card microcopy.",
-      phrase: "short phrases like Reading Era, Book Club Dept, Currently Booked, or Chapter One Energy.",
+      subject: "cozy arched book-club badge with stacked books, bookmark ribbon, tea cup, and small star details",
+      primaryCopy: "CURRENTLY BOOKED",
+      alternateCopy: ["BOOK CLUB DEPT", "READING ERA", "CHAPTER ONE ENERGY"],
     };
   }
 
@@ -935,8 +975,11 @@ function topicProfile(title, text) {
       angle: "Turn the trend into a cheerful local-market identity system that can scale from stickers to mugs.",
       motif: "tomatoes, citrus, herbs, tote basket, hand-lettered price tags, gingham border, and sunburst produce badge.",
       palette: "tomato red, basil green, butter yellow, cream, and a small sky-blue highlight.",
+      colors: ["#243d2b", "#fff4d8", "#c7392f", "#f0c85a", "#7ab6c8"],
       type: "friendly hand-painted script with a blocky market-stall sans for secondary words.",
-      phrase: "short phrases like Market Day, Fresh Picked, Local Produce Club, or Tomato Season.",
+      subject: "farmers market badge with tomato basket, basil sprigs, price-tag label, gingham trim, and sunburst background",
+      primaryCopy: "FRESH PICKED",
+      alternateCopy: ["MARKET DAY", "TOMATO SEASON", "LOCAL PRODUCE CLUB"],
     };
   }
 
@@ -946,8 +989,11 @@ function topicProfile(title, text) {
       angle: "Keep it delicate and wearable, with the bow as the recognizable hook and the copy as the giftable twist.",
       motif: "ribbon bows, pearl dots, tiny hearts, lace frame, cameo oval, and a small handwritten label.",
       palette: "soft pink, ivory, cherry red, charcoal ink, and pale blue as a cooling accent.",
+      colors: ["#2a2428", "#fff3f5", "#ef9db5", "#bf243e", "#a9c9dd"],
       type: "thin serif or fashion editorial type with small cursive details, avoiding childish bubble lettering.",
-      phrase: "short phrases like Bow Dept, Soft Launch, Ribbon Club, or Pretty Little Routine.",
+      subject: "coquette ribbon crest with oversized bow, cameo oval, pearl dots, tiny hearts, and lace corner frame",
+      primaryCopy: "BOW DEPT",
+      alternateCopy: ["SOFT LAUNCH", "RIBBON CLUB", "PRETTY LITTLE ROUTINE"],
     };
   }
 
@@ -957,8 +1003,11 @@ function topicProfile(title, text) {
       angle: "Lead with personalization and repeat-use utility, not a one-off novelty joke.",
       motif: "nameplate frame, small monogram, steam lines, desk icons, floral corners, and repeat pattern accents.",
       palette: "warm cream, espresso, sage, dusty rose, and a clear dark text color for names.",
+      colors: ["#2c211c", "#fff1dc", "#6e4b35", "#8fa078", "#c98e93"],
       type: "clean rounded serif for names with compact sans labels that remain legible on curved surfaces.",
-      phrase: "personalized copy like [Name]'s Cup, Desk Fuel, Daily Sip Club, or Morning Routine.",
+      subject: "personalized daily-sip nameplate with monogram, steam curls, floral corners, and desk-icon repeat pattern",
+      primaryCopy: "[NAME]'S CUP",
+      alternateCopy: ["DESK FUEL", "DAILY SIP CLUB", "MORNING ROUTINE"],
     };
   }
 
@@ -968,8 +1017,11 @@ function topicProfile(title, text) {
       angle: "Create a fictional club identity so it feels athletic without using protected team marks.",
       motif: "varsity crest, pennant, worn numbers, laurel, diagonal motion lines, and a small equipment icon.",
       palette: "faded navy, vintage cream, washed red, athletic gold, and dark green.",
+      colors: ["#17233a", "#f6ead2", "#aa3a32", "#c69b42", "#244c3a"],
       type: "condensed varsity block type with distressed edges and small collegiate sans labels.",
-      phrase: "short phrases like Weekend League, Court Club, Varsity Dept, or Rec Team Original.",
+      subject: "fictional weekend-league varsity crest with pennant, laurel, worn number 76, and small equipment icon",
+      primaryCopy: "WEEKEND LEAGUE",
+      alternateCopy: ["COURT CLUB", "VARSITY DEPT", "REC TEAM ORIGINAL"],
     };
   }
 
@@ -979,8 +1031,11 @@ function topicProfile(title, text) {
       angle: "Package the idea as a collectible mini-world with multiple small icons instead of one vague graphic.",
       motif: "three-to-five icon set, label stickers, sparkle marks, tiny badge seals, and one strong central symbol.",
       palette: "cream base, black outline, one saturated accent, one pastel accent, and one neutral shadow color.",
+      colors: ["#171717", "#fff7e8", "#ff4f6d", "#92d8f0", "#b9a892"],
       type: "small label-maker sans mixed with one expressive headline word.",
-      phrase: "short phrases like Tiny Fandom Kit, Aesthetic Dept, Main Character Errands, or Sticker Club.",
+      subject: "collectible sticker-sheet style layout with five mini icons, sparkle marks, tiny badge seals, and one central label",
+      primaryCopy: "AESTHETIC DEPT",
+      alternateCopy: ["TINY FANDOM KIT", "MAIN CHARACTER ERRANDS", "STICKER CLUB"],
     };
   }
 
@@ -989,8 +1044,11 @@ function topicProfile(title, text) {
     angle: "Translate the trend into an original identity badge, club mark, or phrase system rather than naming the source directly.",
     motif: `symbols pulled from ${keywords.slice(0, 4).join(", ") || "the trend mood"}, simplified into one readable focal mark.`,
     palette: "one dark ink, one warm neutral, one trend color, one contrast accent, and one quiet background color.",
+    colors: ["#111827", "#f8f0db", "#4f7cff", "#e45b7f", "#6d6a5d"],
     type: "bold readable headline type with a smaller supporting label that still works in thumbnail view.",
-    phrase: `short, ownable phrases built around ${keywords.slice(0, 3).join(", ") || "the trend"} without protected names.`,
+    subject: `original identity badge built from ${keywords.slice(0, 4).join(", ") || "the trend mood"} with one clear symbol and supporting label`,
+    primaryCopy: `${(keywords[0] || "TREND").toUpperCase()} CLUB`,
+    alternateCopy: ["LIMITED ROUTINE", "DAILY UNIFORM", "OFF-DUTY CLUB"],
   };
 }
 
@@ -1011,11 +1069,17 @@ function buildSpecificResearch(article, product, category) {
 
   return {
     buyerProfile: profile.buyer,
-    assignment: `${category} assignment: build one merch system for ${product}, then adapt it to ${productUse}.`,
+    designCommand: `Make this exact ${product}: ${profile.subject}. Primary copy: "${profile.primaryCopy}".`,
+    designSubject: profile.subject,
+    primaryCopy: profile.primaryCopy,
+    alternateCopyIdeas: profile.alternateCopy,
+    assignment: `${category} work order: create the "${profile.primaryCopy}" design for ${product}, then adapt the approved layout to ${productUse}.`,
     productAngle: profile.angle,
     visualTreatment: profile.motif,
     colorAndType: `${profile.palette} Use ${profile.type}`,
-    copyDirection: profile.phrase,
+    referenceColors: profile.colors,
+    copyDirection: `Use "${profile.primaryCopy}" as the hero copy. Test alternates: ${profile.alternateCopy.join(", ")}.`,
+    layoutDirection: `Center the subject as the hero mark, place "${profile.primaryCopy}" in the largest type, use one small support label, and keep all details readable at thumbnail size.`,
     searchPhrases: [
       `${baseQuery} ${product}`,
       `${baseQuery} merch`,

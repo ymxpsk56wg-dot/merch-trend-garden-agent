@@ -407,7 +407,7 @@ function imageResultRows(images = []) {
   return images.slice(0, 4).map((image) => {
     const title = escapeHtml(image.title || "Image result");
     const source = escapeHtml(image.source || "Image source");
-    const link = escapeHtml(image.link || image.url || "#");
+    const link = escapeHtml(image.link || "");
     const url = escapeHtml(image.url || "");
     const imageTag = url ? `<img src="${url}" alt="${title}" />` : "";
     return `
@@ -415,7 +415,7 @@ function imageResultRows(images = []) {
         ${imageTag}
         <strong>${title}</strong><br />
         <span>${source}</span><br />
-        <span>${link}</span>
+        ${link ? `<span>${link}</span>` : ""}
       </li>
     `;
   }).join("");
@@ -424,12 +424,17 @@ function imageResultRows(images = []) {
 function specificResearchItems(review) {
   const specific = review.specificResearch || {};
   return [
+    specific.designCommand,
+    specific.primaryCopy && `Primary copy: ${specific.primaryCopy}`,
+    specific.alternateCopyIdeas?.length && `Alternate copy ideas: ${specific.alternateCopyIdeas.join(", ")}`,
     specific.buyerProfile && `Target buyer: ${specific.buyerProfile}`,
     specific.assignment,
     specific.productAngle && `Product angle: ${specific.productAngle}`,
+    specific.designSubject && `Subject: ${specific.designSubject}`,
     specific.visualTreatment && `Visual treatment: ${specific.visualTreatment}`,
     specific.colorAndType && `Color/type: ${specific.colorAndType}`,
     specific.copyDirection && `Copy direction: ${specific.copyDirection}`,
+    specific.layoutDirection && `Layout: ${specific.layoutDirection}`,
     specific.searchPhrases?.length && `Search phrases: ${specific.searchPhrases.join(", ")}`,
   ].filter(Boolean);
 }
@@ -462,7 +467,7 @@ function buildPrintReport(entry) {
         <p>${escapeHtml(review.aiReports?.manager || review.summary || review.designerBrief)}</p>
       </section>
       ${reportList("Why It Is Popular", review.popularityReasons || review.signals, "No popularity reasoning found.")}
-      ${reportList("Specific Assignment", specificResearchItems(review), "No specific assignment details found.")}
+      ${reportList("Design Work Order", specificResearchItems(review), "No design work order found.")}
       ${reportList("Design Direction", review.graphicElements, "No design direction found.")}
       <section class="print-image-results">
         <h2>Image Results</h2>
