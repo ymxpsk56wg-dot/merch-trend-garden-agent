@@ -708,7 +708,7 @@ async function fetchEtsySalesSignal(query, product) {
   }
 }
 
-function reviewTrend(article) {
+async function reviewTrend(article) {
   const category = article.category
     ? {
         category: article.category,
@@ -723,9 +723,9 @@ function reviewTrend(article) {
   const productContext = `${category.category} / ${product}`;
   const popularityReasons = inferPopularityReasons(article, text, productContext);
   const graphicElements = inferGraphicElements(title, text, product);
-  const sourceLinks = buildSourceLinks(title, article);
   const specificResearch = buildSpecificResearch(article, product, category.category);
-  const imageResults = buildImageResults(article, specificResearch);
+  const sourceLinks = buildSourceLinks(title, article, specificResearch);
+  const imageResults = await buildImageResults(article, specificResearch, product);
   const signals = [];
   const watchouts = [];
   let score = 58;
@@ -813,71 +813,108 @@ function reviewTrend(article) {
   };
 }
 
-function svgText(value) {
+function decodeHtml(value) {
   return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
 }
 
-function visualReferenceImage(title, specificResearch) {
-  const colors = specificResearch.referenceColors || ["#101827", "#f8f0db", "#b83a32", "#d8a847", "#2f5f52"];
-  const copy = specificResearch.primaryCopy || "MERCH TEST";
-  const subject = specificResearch.designSubject || title;
-  const motif = specificResearch.visualTreatment || "original merch motif";
-  const paletteRects = colors.map((color, index) => (
-    `<rect x="${72 + index * 76}" y="508" width="56" height="56" rx="8" fill="${svgText(color)}" />`
-  )).join("");
-  const encodedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800" role="img" aria-label="${svgText(title)} visual reference board">
-  <rect width="1200" height="800" fill="${svgText(colors[1] || "#f8f0db")}"/>
-  <rect x="42" y="42" width="1116" height="716" rx="24" fill="${svgText(colors[0] || "#101827")}"/>
-  <rect x="84" y="84" width="492" height="632" rx="18" fill="${svgText(colors[1] || "#f8f0db")}"/>
-  <circle cx="330" cy="284" r="150" fill="${svgText(colors[2] || "#b83a32")}"/>
-  <path d="M214 314c70-86 145-126 226-119 49 4 90 23 122 57-62 18-112 46-151 84-55 53-113 78-197 78Z" fill="${svgText(colors[3] || "#d8a847")}" opacity=".92"/>
-  <path d="M226 392h210" stroke="${svgText(colors[0] || "#101827")}" stroke-width="18" stroke-linecap="round"/>
-  <path d="M252 434h158" stroke="${svgText(colors[0] || "#101827")}" stroke-width="12" stroke-linecap="round" opacity=".78"/>
-  <text x="642" y="152" fill="${svgText(colors[3] || "#d8a847")}" font-family="Arial Black, Arial, sans-serif" font-size="34" font-weight="900" letter-spacing="2">DESIGN WORK ORDER</text>
-  <text x="642" y="228" fill="${svgText(colors[1] || "#f8f0db")}" font-family="Arial Black, Arial, sans-serif" font-size="62" font-weight="900">${svgText(copy).slice(0, 28)}</text>
-  <text x="642" y="294" fill="${svgText(colors[1] || "#f8f0db")}" font-family="Arial, sans-serif" font-size="30" font-weight="700">${svgText(subject).slice(0, 52)}</text>
-  <foreignObject x="642" y="340" width="430" height="126">
-    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family:Arial,sans-serif;font-size:24px;line-height:1.28;color:${svgText(colors[1] || "#f8f0db")}">${svgText(motif).slice(0, 168)}</div>
-  </foreignObject>
-  <text x="72" y="486" fill="${svgText(colors[1] || "#f8f0db")}" font-family="Arial Black, Arial, sans-serif" font-size="26" font-weight="900">REFERENCE PALETTE</text>
-  ${paletteRects}
-  <rect x="642" y="508" width="390" height="74" rx="12" fill="${svgText(colors[2] || "#b83a32")}"/>
-  <text x="672" y="556" fill="${svgText(colors[1] || "#f8f0db")}" font-family="Arial Black, Arial, sans-serif" font-size="28" font-weight="900">MAKE THIS DESIGN</text>
-</svg>`;
-
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(encodedSvg)}`;
+function duckDuckGoVqd(html) {
+  return html.match(/vqd="([^"]+)"/)?.[1] ||
+    html.match(/vqd=([\d-]+)&/)?.[1] ||
+    html.match(/\\"vqd\\":\\"([^\\"]+)/)?.[1] ||
+    "";
 }
 
-function buildImageResults(article, specificResearch) {
-  if (!article.image) {
-    const title = article.title || "Trend visual research";
+function isBlockedImageResult(result) {
+  const value = `${result?.image || ""} ${result?.thumbnail || ""} ${result?.title || ""} ${result?.url || ""}`.toLowerCase();
+  return /\b(explicit|porn|nude|nsfw|adult)\b/.test(value);
+}
 
+async function fetchDuckDuckGoImages(query, limit = 4) {
+  if (!query) {
+    return [];
+  }
+
+  try {
+    const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}&iax=images&ia=images`;
+    const searchResponse = await fetchWithTimeout(searchUrl, {
+      headers: {
+        Accept: "text/html",
+        "User-Agent": "Mozilla/5.0 MerchTrendResearchAgent/1.0",
+      },
+    }, "DuckDuckGo Images search");
+    const html = await searchResponse.text();
+    const vqd = duckDuckGoVqd(html);
+
+    if (!vqd) {
+      return [];
+    }
+
+    const imageUrl = new URL("https://duckduckgo.com/i.js");
+    imageUrl.searchParams.set("l", "us-en");
+    imageUrl.searchParams.set("o", "json");
+    imageUrl.searchParams.set("q", query);
+    imageUrl.searchParams.set("vqd", vqd);
+    imageUrl.searchParams.set("f", ",,,");
+    imageUrl.searchParams.set("p", "1");
+
+    const imageResponse = await fetchWithTimeout(imageUrl, {
+      headers: {
+        Accept: "application/json",
+        Referer: "https://duckduckgo.com/",
+        "User-Agent": "Mozilla/5.0 MerchTrendResearchAgent/1.0",
+      },
+    }, "DuckDuckGo Images results");
+    const payload = await imageResponse.json();
+
+    return (payload.results || [])
+      .filter((result) => result.thumbnail || result.image)
+      .filter((result) => !isBlockedImageResult(result))
+      .slice(0, limit)
+      .map((result) => ({
+        title: compactText(decodeHtml(result.title || query), 120),
+        url: result.thumbnail || result.image,
+        fullImageUrl: result.image || result.thumbnail,
+        source: "DuckDuckGo image result",
+        link: result.url || result.image || "",
+      }));
+  } catch (error) {
+    console.error(`[images] ${error.message}`);
+    return [];
+  }
+}
+
+async function buildImageResults(article, specificResearch, product) {
+  const query = specificResearch?.imageSearchQuery ||
+    `${specificResearch?.primaryCopy || article.title || ""} ${product || ""} merch design`;
+  const results = await fetchDuckDuckGoImages(query, 4);
+
+  if (results.length) {
+    return results;
+  }
+
+  if (article.image) {
     return [
       {
-        title: `Embedded reference board: ${specificResearch?.designSubject || title}`,
-        url: visualReferenceImage(title, specificResearch || {}),
-        source: "Generated reference board from the work order",
-        link: article.url && article.url !== "#" ? article.url : "",
+        title: article.relatedHeadline || article.title || "Trend source image",
+        url: article.image,
+        fullImageUrl: article.image,
+        source: article.source || "Google Trends",
+        link: article.url || "#",
       },
     ];
   }
 
-  return [
-    {
-      title: article.relatedHeadline || article.title || "Trend source image",
-      url: article.image,
-      source: article.source || "Google Trends",
-      link: article.url || "#",
-    },
-  ];
+  return [];
 }
 
-function buildSourceLinks(title, article) {
+function buildSourceLinks(title, article, specificResearch = {}) {
   const encoded = encodeURIComponent(title);
+  const imageQuery = encodeURIComponent(specificResearch.imageSearchQuery || `${title} merch design`);
   const links = [];
 
   if (article.url && article.url !== "#") {
@@ -893,6 +930,11 @@ function buildSourceLinks(title, article) {
       label: "Google Trends keyword check",
       url: `https://trends.google.com/trends/explore?geo=${encodeURIComponent(TREND_GEO)}&q=${encoded}`,
       type: "demand",
+    },
+    {
+      label: "Image result query used",
+      url: `https://duckduckgo.com/?q=${imageQuery}&iax=images&ia=images`,
+      type: "image-search",
     },
     {
       label: "Etsy listing search",
@@ -966,6 +1008,7 @@ function topicProfile(title, text) {
       subject: "cozy arched book-club badge with stacked books, bookmark ribbon, tea cup, and small star details",
       primaryCopy: "CURRENTLY BOOKED",
       alternateCopy: ["BOOK CLUB DEPT", "READING ERA", "CHAPTER ONE ENERGY"],
+      imageQuery: "book club mug design currently booked book stack tea cup",
     };
   }
 
@@ -980,6 +1023,7 @@ function topicProfile(title, text) {
       subject: "farmers market badge with tomato basket, basil sprigs, price-tag label, gingham trim, and sunburst background",
       primaryCopy: "FRESH PICKED",
       alternateCopy: ["MARKET DAY", "TOMATO SEASON", "LOCAL PRODUCE CLUB"],
+      imageQuery: "fresh picked tomato farmers market sticker design",
     };
   }
 
@@ -994,6 +1038,7 @@ function topicProfile(title, text) {
       subject: "coquette ribbon crest with oversized bow, cameo oval, pearl dots, tiny hearts, and lace corner frame",
       primaryCopy: "BOW DEPT",
       alternateCopy: ["SOFT LAUNCH", "RIBBON CLUB", "PRETTY LITTLE ROUTINE"],
+      imageQuery: "coquette bow graphic tee design pink ribbon",
     };
   }
 
@@ -1008,6 +1053,7 @@ function topicProfile(title, text) {
       subject: "personalized daily-sip nameplate with monogram, steam curls, floral corners, and desk-icon repeat pattern",
       primaryCopy: "[NAME]'S CUP",
       alternateCopy: ["DESK FUEL", "DAILY SIP CLUB", "MORNING ROUTINE"],
+      imageQuery: "personalized coffee mug name floral monogram design",
     };
   }
 
@@ -1022,6 +1068,7 @@ function topicProfile(title, text) {
       subject: "fictional weekend-league varsity crest with pennant, laurel, worn number 76, and small equipment icon",
       primaryCopy: "WEEKEND LEAGUE",
       alternateCopy: ["COURT CLUB", "VARSITY DEPT", "REC TEAM ORIGINAL"],
+      imageQuery: "retro varsity sports club graphic tee design pennant",
     };
   }
 
@@ -1036,6 +1083,7 @@ function topicProfile(title, text) {
       subject: "collectible sticker-sheet style layout with five mini icons, sparkle marks, tiny badge seals, and one central label",
       primaryCopy: "AESTHETIC DEPT",
       alternateCopy: ["TINY FANDOM KIT", "MAIN CHARACTER ERRANDS", "STICKER CLUB"],
+      imageQuery: "aesthetic sticker sheet design cute icons",
     };
   }
 
@@ -1049,6 +1097,7 @@ function topicProfile(title, text) {
     subject: `original identity badge built from ${keywords.slice(0, 4).join(", ") || "the trend mood"} with one clear symbol and supporting label`,
     primaryCopy: `${(keywords[0] || "TREND").toUpperCase()} CLUB`,
     alternateCopy: ["LIMITED ROUTINE", "DAILY UNIFORM", "OFF-DUTY CLUB"],
+    imageQuery: `${keywords.slice(0, 4).join(" ")} graphic tee design`,
   };
 }
 
@@ -1073,6 +1122,7 @@ function buildSpecificResearch(article, product, category) {
     designSubject: profile.subject,
     primaryCopy: profile.primaryCopy,
     alternateCopyIdeas: profile.alternateCopy,
+    imageSearchQuery: profile.imageQuery,
     assignment: `${category} work order: create the "${profile.primaryCopy}" design for ${product}, then adapt the approved layout to ${productUse}.`,
     productAngle: profile.angle,
     visualTreatment: profile.motif,
@@ -1478,7 +1528,7 @@ function fallbackArticles() {
     {
       category: "T-shirts",
       products: ["graphic tee"],
-      title: "Retro sports graphics continue trending across casual fashion",
+      title: "Retro varsity weekend league crest tee",
       source: "fallback.local",
       url: "#",
       image: "",
@@ -1488,7 +1538,7 @@ function fallbackArticles() {
     {
       category: "Cups",
       products: ["ceramic mug", "travel tumbler"],
-      title: "Personalized drinkware remains a strong gifting category",
+      title: "Personalized desk fuel floral name mug",
       source: "fallback.local",
       url: "#",
       image: "",
@@ -1498,7 +1548,7 @@ function fallbackArticles() {
     {
       category: "Merch",
       products: ["sticker pack", "tote bag"],
-      title: "Sticker and tote designs follow fandom and aesthetic microtrends",
+      title: "Aesthetic dept collectible sticker sheet",
       source: "fallback.local",
       url: "#",
       image: "",
@@ -1508,7 +1558,7 @@ function fallbackArticles() {
     {
       category: "T-shirts",
       products: ["graphic tee", "oversized shirt"],
-      title: "Coquette bow graphics and soft pink typography keep selling on giftable apparel",
+      title: "Coquette bow dept soft pink graphic tee",
       source: "fallback.local",
       url: "#",
       image: "",
@@ -1518,7 +1568,7 @@ function fallbackArticles() {
     {
       category: "Cups",
       products: ["travel tumbler", "ceramic mug"],
-      title: "Book club and reading era phrases are strong for mugs and tote bags",
+      title: "Currently booked cozy book club mug",
       source: "fallback.local",
       url: "#",
       image: "",
@@ -1528,7 +1578,7 @@ function fallbackArticles() {
     {
       category: "Merch",
       products: ["sticker pack", "phone case", "poster"],
-      title: "Farmers market produce illustrations are working across stickers and kitchen gifts",
+      title: "Fresh picked tomato market sticker pack",
       source: "fallback.local",
       url: "#",
       image: "",
@@ -1546,7 +1596,7 @@ async function handleReview(request, response) {
     const article = selectNextTrendArticle(articles);
 
     const trigger = force ? "manual" : url.searchParams.get("trigger") || "scheduled";
-    const baseReview = reviewTrend(article);
+    const baseReview = await reviewTrend(article);
     const salesSignal = await fetchEtsySalesSignal(baseReview.title, baseReview.product);
     const review = await runAiAgentSynthesis(
       enrichReviewWithSalesAndDesign(baseReview, salesSignal),
