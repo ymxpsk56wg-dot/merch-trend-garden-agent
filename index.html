@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="A pixel-art office where an AI agent reviews popular merch design trends every 10 minutes and posts them to a digital board."
+      content="A Matrix-style AI agent interface that reviews merch design trends every 10 minutes and archives each research signal."
     />
-    <title>Merch Trend Office Agent</title>
+    <title>Merch Trend Matrix Agent</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -21,8 +21,8 @@
       <aside class="trend-sidebar" aria-label="Posted trend reviews">
         <div class="sidebar-head">
           <div>
-            <p class="eyebrow">Posted board</p>
-            <h1>Trend Garden</h1>
+            <p class="eyebrow">Signal archive</p>
+            <h1>Trend Matrix</h1>
           </div>
           <div class="status-pill" id="statusPill">
             <span class="pulse" aria-hidden="true"></span>
@@ -57,7 +57,7 @@
         </div>
 
         <section class="posted-list" aria-label="Trend posts visible on the office board">
-          <div class="list-title">Office board posts</div>
+          <div class="list-title">Posted trend signals</div>
           <ol id="eventLog"></ol>
         </section>
 
@@ -67,13 +67,13 @@
         </section>
       </aside>
 
-      <section class="workplace" aria-label="Pixel-art AI agent workplace">
+      <section class="workplace" aria-label="Matrix-style AI agent workplace">
         <header class="topbar">
           <div class="brand-lockup">
             <span class="brand-mark" aria-hidden="true"></span>
             <div>
-              <span class="brand-name">Merch Trend Garden Agent</span>
-              <span class="brand-subtitle">Every 10 minutes: research hut, market signal, board post</span>
+              <span class="brand-name">Merch Trend Matrix Agent</span>
+              <span class="brand-subtitle">Every 10 minutes: scan, classify, brief, archive</span>
             </div>
           </div>
           <div class="run-state" id="agentTask">Standing by</div>
@@ -97,13 +97,13 @@
 
             <div class="board office-object" aria-label="Digital trend board">
               <div class="board-header">
-                <span>Live Board</span>
+                <span>Signal Board</span>
                 <span id="boardScore">--</span>
               </div>
               <div class="board-post">
                 <span id="boardCategory">Waiting</span>
                 <strong id="boardTitle">No trend posted yet</strong>
-                <small id="boardProduct">The agent will post the next review here.</small>
+                <small id="boardProduct">The next decoded design signal will post here.</small>
               </div>
             </div>
 
@@ -187,8 +187,8 @@
             <div class="insight-block">
               <h3>Designer brief</h3>
               <p id="summaryText">
-                The agent will walk to the desk, review a top trend, then post the design read on
-                the office board and sidebar.
+                The agent will scan a top trend, decode the visual opportunity, then post it to
+                the signal board and clickable archive.
               </p>
             </div>
 

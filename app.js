@@ -6,6 +6,8 @@ const state = {
   nextRunAt: Date.now() + REVIEW_INTERVAL_MS,
   loading: false,
   lastReview: null,
+  history: [],
+  selectedHistoryId: null,
   countdownTimerId: null,
   missionTimerIds: [],
 };
@@ -148,23 +150,48 @@ function renderImageResult(review) {
   imageResultCaption.textContent = "No source image was provided by this feed. Use the research links to inspect visual references manually.";
 }
 
+function createHistoryEntry(payload) {
+  return {
+    id: `${Date.now()}-${state.history.length}`,
+    createdAt: new Date().toISOString(),
+    source: payload.source,
+    query: payload.query,
+    market: payload.market,
+    review: payload.review,
+  };
+}
+
 function renderReview(payload) {
-  const review = payload.review;
+  const entry = createHistoryEntry(payload);
+
+  state.history.unshift(entry);
+
+  while (state.history.length > 12) {
+    state.history.pop();
+  }
+
+  state.reviewed = state.history.length;
+  state.selectedHistoryId = entry.id;
+  renderReviewEntry(entry);
+  renderEventLog();
+}
+
+function renderReviewEntry(entry) {
+  const review = entry.review;
   state.lastReview = review;
-  state.reviewed += 1;
 
   listingTitle.textContent = review.title;
   listingLink.href = review.url || "#";
   reviewScore.textContent = `${review.score}/100`;
   listingPrice.textContent = review.product || "Merch design";
-  sourceMode.textContent = sourceLabel(payload.source);
-  marketText.textContent = review.market || payload.market || "US";
+  sourceMode.textContent = sourceLabel(entry.source);
+  marketText.textContent = review.market || entry.market || "US";
   summaryText.textContent = review.designerBrief || review.summary;
   reviewCount.textContent = state.reviewed;
   renderImageResult(review);
 
   boardScore.textContent = `${review.score}`;
-  boardCategory.textContent = review.category || payload.query || "Trend";
+  boardCategory.textContent = review.category || entry.query || "Trend";
   boardTitle.textContent = review.title;
   boardProduct.textContent = review.product || "Merch design";
 
@@ -172,25 +199,30 @@ function renderReview(payload) {
   setList(elementList, review.graphicElements, "No graphical elements were inferred yet.");
   setSourceLinks(sourceLinkList, review.sourceLinks);
   setList(watchoutList, review.watchouts, "No obvious watchouts from the trend metadata.");
-  addLogEntry(review, payload.source);
 }
 
-function addLogEntry(review, source) {
-  const item = document.createElement("li");
-  const title = document.createElement("span");
-  const meta = document.createElement("time");
-  const category = document.createElement("strong");
+function renderEventLog() {
+  eventLog.replaceChildren();
 
-  category.textContent = review.category || "Trend";
-  title.textContent = review.title;
-  meta.textContent = `${review.score}/100 · ${review.product || "merch"} · ${review.market || "US"} · ${sourceLabel(source)} · ${formatClock(new Date())}`;
+  state.history.forEach((entry) => {
+    const review = entry.review;
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    const category = document.createElement("strong");
+    const title = document.createElement("span");
+    const meta = document.createElement("time");
 
-  item.append(category, title, meta);
-  eventLog.prepend(item);
+    button.type = "button";
+    button.dataset.reviewId = entry.id;
+    button.className = entry.id === state.selectedHistoryId ? "is-selected" : "";
+    category.textContent = review.category || "Trend";
+    title.textContent = review.title;
+    meta.textContent = `${review.score}/100 · ${review.product || "merch"} · ${review.market || "US"} · ${sourceLabel(entry.source)} · ${formatClock(new Date(entry.createdAt))}`;
 
-  while (eventLog.children.length > 8) {
-    eventLog.lastElementChild.remove();
-  }
+    button.append(category, title, meta);
+    item.append(button);
+    eventLog.append(item);
+  });
 }
 
 function renderApiSources(sources) {
@@ -321,6 +353,26 @@ function explainFetchError(error) {
 
 reviewNowButton.addEventListener("click", () => {
   runReview("manual");
+});
+
+eventLog.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-review-id]");
+
+  if (!button) {
+    return;
+  }
+
+  const entry = state.history.find((historyEntry) => historyEntry.id === button.dataset.reviewId);
+
+  if (!entry) {
+    return;
+  }
+
+  state.selectedHistoryId = entry.id;
+  renderReviewEntry(entry);
+  renderEventLog();
+  setAgentState("idle", "Reviewing archive");
+  setStatus("Archive view", "ready");
 });
 
 state.countdownTimerId = window.setInterval(renderCountdown, 1000);
