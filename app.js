@@ -10,31 +10,28 @@ const state = {
   selectedHistoryId: null,
   countdownTimerId: null,
   missionTimerIds: [],
+  managerFeed: [],
 };
 
 const statusText = document.querySelector("#statusText");
 const statusPill = document.querySelector("#statusPill");
 const agentTask = document.querySelector("#agentTask");
 const officeScene = document.querySelector("#officeScene");
-const carryCard = document.querySelector("#carryCard");
 const boardScore = document.querySelector("#boardScore");
 const boardCategory = document.querySelector("#boardCategory");
 const boardTitle = document.querySelector("#boardTitle");
-const boardProduct = document.querySelector("#boardProduct");
-const monitorText = document.querySelector("#monitorText");
 const listingTitle = document.querySelector("#listingTitle");
 const listingLink = document.querySelector("#listingLink");
 const imageResultLink = document.querySelector("#imageResultLink");
 const imageResult = document.querySelector("#imageResult");
 const imageResultFallback = document.querySelector("#imageResultFallback");
-const imageResultCaption = document.querySelector("#imageResultCaption");
-const reviewScore = document.querySelector("#reviewScore");
 const listingPrice = document.querySelector("#listingPrice");
 const sourceMode = document.querySelector("#sourceMode");
 const marketText = document.querySelector("#marketText");
 const summaryText = document.querySelector("#summaryText");
 const reasonList = document.querySelector("#reasonList");
 const elementList = document.querySelector("#elementList");
+const marketingPlanList = document.querySelector("#marketingPlanList");
 const sourceLinkList = document.querySelector("#sourceLinkList");
 const watchoutList = document.querySelector("#watchoutList");
 const reviewNowButton = document.querySelector("#reviewNowButton");
@@ -44,16 +41,61 @@ const countdownValue = document.querySelector("#countdownValue");
 const progressFill = document.querySelector("#progressFill");
 const eventLog = document.querySelector("#eventLog");
 const apiSourceList = document.querySelector("#apiSourceList");
+const managerFeed = document.querySelector("#managerFeed");
 const managerDirective = document.querySelector("#managerDirective");
 const managerReason = document.querySelector("#managerReason");
 const demandRoomStatus = document.querySelector("#demandRoomStatus");
 const marketRoomStatus = document.querySelector("#marketRoomStatus");
-const designRoomStatus = document.querySelector("#designRoomStatus");
 const salesRoomStatus = document.querySelector("#salesRoomStatus");
+const designRoomStatus = document.querySelector("#designRoomStatus");
+const marketingRoomStatus = document.querySelector("#marketingRoomStatus");
 const riskRoomStatus = document.querySelector("#riskRoomStatus");
-const workerNodes = document.querySelectorAll("[data-worker]");
-const projectNodes = document.querySelectorAll("[data-project]");
+const demandReport = document.querySelector("#demandReport");
+const marketReport = document.querySelector("#marketReport");
+const salesReport = document.querySelector("#salesReport");
+const designReport = document.querySelector("#designReport");
+const marketingReport = document.querySelector("#marketingReport");
+const riskReport = document.querySelector("#riskReport");
 const designPlanList = document.querySelector("#designPlanList");
+const agentCards = document.querySelectorAll("[data-agent]");
+
+const agents = {
+  demand: {
+    label: "Demand agent",
+    active: "Reading search velocity",
+    idle: "Watching trend velocity",
+  },
+  market: {
+    label: "Market agent",
+    active: "Checking marketplace context",
+    idle: "Mapping where it is selling",
+  },
+  sales: {
+    label: "Sales agent",
+    active: "Pulling sales proxy",
+    idle: "Checking Etsy proxy",
+  },
+  design: {
+    label: "Design agent",
+    active: "Drafting Figma direction",
+    idle: "Preparing Figma direction",
+  },
+  marketing: {
+    label: "Marketing agent",
+    active: "Building launch plan",
+    idle: "Building launch plan",
+  },
+  risk: {
+    label: "Risk agent",
+    active: "Reviewing constraints",
+    idle: "Scanning watchouts",
+  },
+  manager: {
+    label: "Manager agent",
+    active: "Synthesizing decision",
+    idle: "Reporting progress",
+  },
+};
 
 function formatClock(date) {
   return new Intl.DateTimeFormat([], {
@@ -99,15 +141,14 @@ function sourceLabel(source) {
   return labels[source] || source || "Unknown";
 }
 
-function setAgentState(phase, label) {
-  officeScene.dataset.agentState = phase;
-  agentTask.textContent = label;
-  monitorText.textContent = phase === "researching" ? "LOOKUP..." : "TREND DB";
-  carryCard.textContent = phase === "to-board" || phase === "posting" ? "TREND" : "";
+function shortText(value, fallback, maxLength = 120) {
+  const text = String(value || fallback).replace(/\s+/g, " ").trim();
 
-  workerNodes.forEach((worker) => {
-    worker.dataset.phase = phase;
-  });
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, maxLength - 1)}...`;
 }
 
 function getFruitScore(review) {
@@ -115,9 +156,10 @@ function getFruitScore(review) {
   const reasoningDepth = Math.min(10, (review.popularityReasons?.length || review.signals?.length || 0) * 2);
   const imageSignal = review.image || review.imageResults?.length ? 6 : 0;
   const designDepth = Math.min(8, (review.graphicElements?.length || 0) * 2);
+  const salesDepth = review.salesSignal?.status === "active" ? 8 : 0;
   const baseScore = Number(review.score) || 0;
 
-  return Math.min(100, Math.round(baseScore * 0.74 + sourceDepth + reasoningDepth + imageSignal + designDepth));
+  return Math.min(100, Math.round(baseScore * 0.7 + sourceDepth + reasoningDepth + imageSignal + designDepth + salesDepth));
 }
 
 function getFruitTier(score) {
@@ -132,62 +174,61 @@ function getFruitTier(score) {
   return "low";
 }
 
-function getProjectType(review) {
-  const product = `${review.product || ""} ${review.title || ""}`.toLowerCase();
+function setAgentStatus(agentKey, status = "idle", label) {
+  const card = document.querySelector(`[data-agent="${agentKey}"]`);
 
-  if (/cup|mug|tumbler|drink/.test(product)) {
-    return "cup";
+  if (!card) {
+    return;
   }
 
-  if (/shirt|tee|t-shirt|apparel|hoodie/.test(product)) {
-    return "shirt";
-  }
+  card.dataset.status = status;
+  const statusTarget = {
+    demand: demandRoomStatus,
+    market: marketRoomStatus,
+    sales: salesRoomStatus,
+    design: designRoomStatus,
+    marketing: marketingRoomStatus,
+    risk: riskRoomStatus,
+  }[agentKey];
 
-  return "gear";
+  if (statusTarget && label) {
+    statusTarget.textContent = label;
+  }
 }
 
-function shortText(value, fallback, maxLength = 26) {
-  const text = value || fallback;
+function setAllAgents(status = "idle") {
+  agentCards.forEach((card) => {
+    const key = card.dataset.agent;
+    card.dataset.status = status;
+    if (status === "idle" && agents[key]) {
+      const statusTarget = {
+        demand: demandRoomStatus,
+        market: marketRoomStatus,
+        sales: salesRoomStatus,
+        design: designRoomStatus,
+        marketing: marketingRoomStatus,
+        risk: riskRoomStatus,
+      }[key];
 
-  if (text.length <= maxLength) {
-    return text;
-  }
-
-  return `${text.slice(0, maxLength - 1)}...`;
-}
-
-function renderManagerGuidance(review, entry) {
-  const fruitScore = getFruitScore(review);
-  const fruitTier = getFruitTier(fruitScore);
-  const projectType = getProjectType(review);
-  const product = review.product || "merch";
-  const category = review.category || entry.query || "trend";
-  const market = review.market || entry.market || "US";
-
-  officeScene.dataset.fruitTier = fruitTier;
-  officeScene.dataset.projectFocus = projectType;
-  managerDirective.textContent = `${fruitScore}/100 fruit score: ${shortText(product, "merch project", 30)}`;
-  managerReason.textContent =
-    fruitTier === "high"
-      ? `Route all rooms toward ${shortText(category, "this trend", 28)} in ${market}.`
-      : `Keep scouting while ${shortText(category, "this trend", 28)} builds more proof.`;
-
-  demandRoomStatus.textContent = shortText(category, "Demand signal");
-  marketRoomStatus.textContent = `${market} proof`;
-  salesRoomStatus.textContent =
-    review.salesSignal?.status === "active"
-      ? `${review.salesSignal.topListings?.length || 0} Etsy proxies`
-      : "Needs key";
-  designRoomStatus.textContent = review.designPlan?.proofLevel || `${review.graphicElements?.length || 0} visual cues`;
-  riskRoomStatus.textContent = `${review.watchouts?.length || 0} watchouts`;
-
-  workerNodes.forEach((worker) => {
-    worker.dataset.priority = fruitTier;
+      if (statusTarget && agents[key].idle) {
+        statusTarget.textContent = agents[key].idle;
+      }
+    }
   });
+}
 
-  projectNodes.forEach((projectNode) => {
-    projectNode.classList.toggle("is-focused", projectNode.dataset.project === projectType);
-    projectNode.dataset.priority = fruitTier;
+function addManagerFeed(message) {
+  state.managerFeed.unshift(`${formatClock(new Date())} - ${message}`);
+
+  while (state.managerFeed.length > 9) {
+    state.managerFeed.pop();
+  }
+
+  managerFeed.replaceChildren();
+  state.managerFeed.forEach((itemText) => {
+    const item = document.createElement("li");
+    item.textContent = itemText;
+    managerFeed.append(item);
   });
 }
 
@@ -222,15 +263,6 @@ function setSourceLinks(list, links) {
   });
 }
 
-function renderDesignPlan(review) {
-  const rollout = review.designPlan?.rollout || [
-    "Run a trend review to generate the manager direction.",
-    "Connect Etsy and Figma to turn the trend into a design board.",
-  ];
-
-  setList(designPlanList, rollout, "No rollout plan was generated yet.");
-}
-
 function renderImageResult(review) {
   const result = review.imageResults?.[0];
   const imageUrl = result?.url || review.image;
@@ -243,7 +275,6 @@ function renderImageResult(review) {
     imageResult.alt = result?.title || review.title;
     imageResult.hidden = false;
     imageResultFallback.hidden = true;
-    imageResultCaption.textContent = `${result?.source || review.source || "Source"} image for visual research. Use it for mood and composition only; do not copy artwork.`;
     return;
   }
 
@@ -251,7 +282,60 @@ function renderImageResult(review) {
   imageResult.alt = "";
   imageResult.hidden = true;
   imageResultFallback.hidden = false;
-  imageResultCaption.textContent = "No source image was provided by this feed. Use the research links to inspect visual references manually.";
+}
+
+function marketingPlan(review) {
+  return review.designPlan?.marketingPlan || [
+    `Lead with ${review.category || "the trend"} buyers and validate copy against current demand.`,
+    "Launch one hero design first, then expand to secondary products if the signal holds.",
+    "Use marketplace tags and source links to write product titles without copying protected terms.",
+  ];
+}
+
+function renderAgentReports(review, entry) {
+  const demandLine = review.popularityReasons?.[0] || review.signals?.[0] || "Demand signal is still forming.";
+  const marketLine = `Market: ${review.market || entry.market || "US"} via ${sourceLabel(entry.source)}. ${review.evidence || "Trend source is active."}`;
+  const salesLine = review.salesSignal?.summary || "Sales proxy is waiting for Etsy configuration.";
+  const designLine = review.designPlan?.direction || review.graphicElements?.[0] || "Design direction is still forming.";
+  const marketingLine = marketingPlan(review)[0];
+  const riskLine = review.watchouts?.[0] || "No major watchout detected, but review saturation and IP before launch.";
+
+  demandRoomStatus.textContent = shortText(review.category, "Demand signal", 36);
+  marketRoomStatus.textContent = `${review.market || entry.market || "US"} market`;
+  salesRoomStatus.textContent =
+    review.salesSignal?.status === "active"
+      ? `${review.salesSignal.topListings?.length || 0} Etsy proxies`
+      : "Needs Etsy key";
+  designRoomStatus.textContent = review.designPlan?.proofLevel || `${review.graphicElements?.length || 0} visual cues`;
+  marketingRoomStatus.textContent = `${marketingPlan(review).length} launch actions`;
+  riskRoomStatus.textContent = `${review.watchouts?.length || 0} watchouts`;
+
+  demandReport.textContent = demandLine;
+  marketReport.textContent = marketLine;
+  salesReport.textContent = salesLine;
+  designReport.textContent = designLine;
+  marketingReport.textContent = marketingLine;
+  riskReport.textContent = riskLine;
+}
+
+function renderManagerDecision(review, entry) {
+  const fruitScore = getFruitScore(review);
+  const fruitTier = getFruitTier(fruitScore);
+  const product = review.product || "merch design";
+  const category = review.category || entry.query || "trend";
+  const market = review.market || entry.market || "US";
+
+  officeScene.dataset.runState = fruitTier;
+  boardScore.textContent = `${fruitScore}`;
+  managerDirective.textContent = `${fruitScore}/100: ${shortText(product, "merch project", 46)}`;
+  managerReason.textContent =
+    fruitTier === "high"
+      ? `Proceed: agents found a strong ${category} opportunity for ${market}.`
+      : fruitTier === "medium"
+        ? `Test carefully: ${category} has useful signal, but sales proof or risk checks need more confidence.`
+        : `Hold for scouting: ${category} needs stronger proof before production.`;
+
+  addManagerFeed(`${fruitTier.toUpperCase()} priority on ${product}: ${managerReason.textContent}`);
 }
 
 function createHistoryEntry(payload) {
@@ -285,26 +369,24 @@ function renderReviewEntry(entry) {
   state.lastReview = review;
 
   listingTitle.textContent = review.title;
+  boardTitle.textContent = review.title;
   listingLink.href = review.url || "#";
-  reviewScore.textContent = `${review.score}/100`;
   listingPrice.textContent = review.product || "Merch design";
+  boardCategory.textContent = review.category || entry.query || "Trend";
   sourceMode.textContent = sourceLabel(entry.source);
   marketText.textContent = review.market || entry.market || "US";
   summaryText.textContent = review.designerBrief || review.summary;
   reviewCount.textContent = state.reviewed;
   renderImageResult(review);
-
-  boardScore.textContent = `${review.score}`;
-  boardCategory.textContent = review.category || entry.query || "Trend";
-  boardTitle.textContent = review.title;
-  boardProduct.textContent = review.product || "Merch design";
-  renderManagerGuidance(review, entry);
+  renderAgentReports(review, entry);
+  renderManagerDecision(review, entry);
 
   setList(reasonList, review.popularityReasons || review.signals, "No popularity reasoning found in the trend metadata.");
   setList(elementList, review.graphicElements, "No graphical elements were inferred yet.");
+  setList(marketingPlanList, marketingPlan(review), "No marketing plan generated yet.");
+  setList(designPlanList, review.designPlan?.rollout, "No production rollout generated yet.");
   setSourceLinks(sourceLinkList, review.sourceLinks);
   setList(watchoutList, review.watchouts, "No obvious watchouts from the trend metadata.");
-  renderDesignPlan(review);
 }
 
 function renderEventLog() {
@@ -323,7 +405,7 @@ function renderEventLog() {
     button.className = entry.id === state.selectedHistoryId ? "is-selected" : "";
     category.textContent = review.category || "Trend";
     title.textContent = review.title;
-    meta.textContent = `${review.score}/100 · ${review.product || "merch"} · ${review.market || "US"} · ${sourceLabel(entry.source)} · ${formatClock(new Date(entry.createdAt))}`;
+    meta.textContent = `${getFruitScore(review)}/100 - ${review.product || "merch"} - ${formatClock(new Date(entry.createdAt))}`;
 
     button.append(category, title, meta);
     item.append(button);
@@ -342,13 +424,11 @@ function renderApiSources(sources) {
     const item = document.createElement("li");
     const name = document.createElement("strong");
     const meta = document.createElement("span");
-    const setup = document.createElement("small");
 
     item.dataset.status = source.status;
     name.textContent = source.name;
-    meta.textContent = `${source.statusLabel} · ${source.signal}`;
-    setup.textContent = source.setup;
-    item.append(name, meta, setup);
+    meta.textContent = `${source.statusLabel} - ${source.signal}`;
+    item.append(name, meta);
     apiSourceList.append(item);
   });
 }
@@ -372,7 +452,6 @@ async function loadApiSources() {
         status: "active",
         statusLabel: "Live",
         signal: "Realtime search demand",
-        setup: "No key required",
       },
     ]);
   }
@@ -410,6 +489,20 @@ async function fetchReview(trigger) {
   return payload;
 }
 
+async function runAgentPhase(agentKey, reportText, duration = 450) {
+  const agent = agents[agentKey];
+  setAgentStatus(agentKey, "working", agent?.active || "Working");
+  agentTask.textContent = agent?.active || "Agent working";
+  addManagerFeed(`${agent?.label || agentKey} started.`);
+  await sleep(duration);
+
+  if (reportText) {
+    addManagerFeed(`${agent?.label || agentKey} reported: ${shortText(reportText, "complete", 88)}`);
+  }
+
+  setAgentStatus(agentKey, "done");
+}
+
 async function runReview(trigger) {
   if (state.loading) {
     return;
@@ -418,29 +511,43 @@ async function runReview(trigger) {
   state.loading = true;
   clearMissionTimers();
   reviewNowButton.disabled = true;
-  setStatus(trigger === "manual" ? "Reviewing now" : "Reviewing", "loading");
+  officeScene.dataset.runState = "running";
+  setAllAgents("queued");
+  setStatus(trigger === "manual" ? "Manual cycle" : "Autonomous cycle", "loading");
+  addManagerFeed(trigger === "manual" ? "Manual full agent cycle started." : "Scheduled autonomous cycle started.");
 
   try {
-    setAgentState("to-desk", "Walking to desk");
-    await sleep(900);
-
-    setAgentState("researching", "Looking up top trend");
+    await runAgentPhase("manager", "Assigned research, sales, design, marketing, and risk tasks.", 350);
+    setAgentStatus("demand", "working", agents.demand.active);
+    setAgentStatus("market", "working", agents.market.active);
+    setAgentStatus("sales", "working", agents.sales.active);
+    agentTask.textContent = "Research agents collecting signals";
     const payload = await fetchReview(trigger);
-    await sleep(700);
 
-    setAgentState("to-board", "Carrying trend to board");
-    await sleep(1100);
+    const review = payload.review;
+    await sleep(550);
+    await runAgentPhase("demand", review.popularityReasons?.[0] || review.signals?.[0], 300);
+    await runAgentPhase("market", `${review.market || payload.market || "US"} market context collected.`, 300);
+    await runAgentPhase("sales", review.salesSignal?.summary, 300);
+    await runAgentPhase("design", review.designPlan?.direction || review.graphicElements?.[0], 420);
+    await runAgentPhase("marketing", marketingPlan(review)[0], 420);
+    await runAgentPhase("risk", review.watchouts?.[0], 360);
 
-    setAgentState("posting", "Posting to board");
+    setAgentStatus("manager", "working", agents.manager.active);
+    agentTask.textContent = "Manager synthesizing reports";
+    await sleep(400);
     renderReview(payload);
-    await sleep(500);
-
-    setAgentState("idle", "Standing by");
+    await sleep(350);
+    setAgentStatus("manager", "done", "Decision posted");
+    agentTask.textContent = "Agents monitoring next opportunity";
     setStatus(sourceLabel(payload.source), payload.source);
   } catch (error) {
-    setAgentState("idle", "Review failed");
-    setStatus("Review failed", "error");
+    officeScene.dataset.runState = "error";
+    setAllAgents("idle");
+    setStatus("Cycle failed", "error");
+    agentTask.textContent = "Autonomous cycle failed";
     summaryText.textContent = explainFetchError(error);
+    addManagerFeed(`Cycle failed: ${error.message}`);
   } finally {
     state.loading = false;
     reviewNowButton.disabled = false;
@@ -477,11 +584,13 @@ eventLog.addEventListener("click", (event) => {
   state.selectedHistoryId = entry.id;
   renderReviewEntry(entry);
   renderEventLog();
-  setAgentState("idle", "Reviewing archive");
   setStatus("Archive view", "ready");
+  agentTask.textContent = "Reviewing archived cycle";
+  addManagerFeed(`Archive opened: ${entry.review.title}`);
 });
 
 state.countdownTimerId = window.setInterval(renderCountdown, 1000);
+setAllAgents("idle");
 renderCountdown();
 loadApiSources();
 runReview("initial");

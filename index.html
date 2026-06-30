@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="A Matrix-style AI agent interface that reviews merch design trends every 10 minutes and archives each research signal."
+      content="An autonomous AI merch workplace where agents research trends, create design direction, plan marketing, check sales signals, and report progress."
     />
-    <title>Merch Trend Matrix Agent</title>
+    <title>Merch Agent Workplace</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -18,32 +18,27 @@
   </head>
   <body>
     <main class="app-shell">
-      <aside class="trend-sidebar" aria-label="Posted trend reviews">
-        <div class="sidebar-head">
-          <div>
-            <p class="eyebrow">Signal archive</p>
-            <h1>Trend Matrix</h1>
-          </div>
+      <aside class="ops-sidebar" aria-label="Operations controls and archive">
+        <header class="sidebar-header">
+          <p class="eyebrow">Autonomous merch office</p>
+          <h1>Trend to product command</h1>
           <div class="status-pill" id="statusPill">
             <span class="pulse" aria-hidden="true"></span>
             <span id="statusText">Ready</span>
           </div>
-        </div>
+        </header>
 
-        <div class="sidebar-actions">
-          <button class="primary-button" id="reviewNowButton" type="button">
-            <span class="button-icon" aria-hidden="true">!</span>
-            Review now
-          </button>
-        </div>
+        <button class="primary-button" id="reviewNowButton" type="button">
+          Run full agent cycle
+        </button>
 
-        <dl class="sidebar-stats">
+        <dl class="run-stats">
           <div>
-            <dt>Reviewed</dt>
+            <dt>Cycles</dt>
             <dd id="reviewCount">0</dd>
           </div>
           <div>
-            <dt>Next auto run</dt>
+            <dt>Next run</dt>
             <dd id="nextRun">--:--</dd>
           </div>
           <div>
@@ -56,234 +51,184 @@
           <span class="progress-fill" id="progressFill"></span>
         </div>
 
-        <section class="posted-list" aria-label="Trend posts visible on the office board">
-          <div class="list-title">Posted trend signals</div>
-          <ol id="eventLog"></ol>
+        <section class="sidebar-section" aria-label="Manager progress reports">
+          <div class="section-title">Manager progress</div>
+          <ol class="manager-feed" id="managerFeed">
+            <li>Manager is waiting for the first autonomous cycle.</li>
+          </ol>
         </section>
 
-        <section class="api-source-list" aria-label="Trend research API sources">
-          <div class="list-title">Research access points</div>
-          <ol id="apiSourceList"></ol>
+        <section class="sidebar-section" aria-label="Past autonomous cycles">
+          <div class="section-title">Past cycles</div>
+          <ol class="cycle-archive" id="eventLog"></ol>
+        </section>
+
+        <section class="sidebar-section source-section" aria-label="Connected sources">
+          <div class="section-title">Data access</div>
+          <ol class="source-list" id="apiSourceList"></ol>
         </section>
       </aside>
 
-      <section class="workplace" aria-label="Matrix-style AI agent workplace">
-        <header class="topbar">
-          <div class="brand-lockup">
-            <span class="brand-mark" aria-hidden="true"></span>
-            <div>
-              <span class="brand-name">Merch Trend Matrix Agent</span>
-              <span class="brand-subtitle">Every 10 minutes: scan, classify, brief, archive</span>
-            </div>
+      <section class="workplace" aria-label="Autonomous agent workplace">
+        <header class="command-bar">
+          <div>
+            <p class="eyebrow">Current mission</p>
+            <h2 id="listingTitle">Waiting for first trend cycle</h2>
           </div>
-          <div class="run-state" id="agentTask">Standing by</div>
+          <div class="mission-state" id="agentTask">Agents standing by</div>
         </header>
 
-        <section class="office-stage">
-          <div class="pixel-office" id="officeScene" data-agent-state="idle">
-            <div class="office-grid" aria-hidden="true"></div>
-            <div class="stone-path path-main" aria-hidden="true"></div>
-            <div class="stone-path path-cross" aria-hidden="true"></div>
-            <div class="fence fence-top" aria-hidden="true"></div>
-            <div class="fence fence-bottom" aria-hidden="true"></div>
-            <div class="garden-tree tree-left" aria-hidden="true"></div>
-            <div class="garden-tree tree-right" aria-hidden="true"></div>
-            <div class="garden-rock rock-left" aria-hidden="true"></div>
-            <div class="garden-rock rock-right" aria-hidden="true"></div>
-            <div class="mushroom mushroom-left" aria-hidden="true"></div>
-            <div class="mushroom mushroom-right" aria-hidden="true"></div>
-            <div class="wildflowers flowers-left" aria-hidden="true"></div>
-            <div class="wildflowers flowers-right" aria-hidden="true"></div>
+        <section class="office-floor" id="officeScene" data-run-state="idle" aria-label="AI agent office floor">
+          <div class="floor-grid" aria-hidden="true"></div>
 
-            <div class="research-room room-demand office-object" aria-label="Demand research room">
-              <span class="room-label">Demand</span>
-              <strong id="demandRoomStatus">Search volume</strong>
-              <small>Trends, keywords, spikes</small>
-            </div>
-            <div class="research-room room-market office-object" aria-label="Marketplace research room">
-              <span class="room-label">Market</span>
-              <strong id="marketRoomStatus">Seller proof</strong>
-              <small>Etsy, eBay, source links</small>
-            </div>
-            <div class="research-room room-design office-object" aria-label="Design research room">
-              <span class="room-label">Design</span>
-              <strong id="designRoomStatus">Figma board</strong>
-              <small>Concept, palette, rollout</small>
-            </div>
-            <div class="research-room room-sales office-object" aria-label="Sales research room">
-              <span class="room-label">Sales</span>
-              <strong id="salesRoomStatus">Etsy proxy</strong>
-              <small>Listings, tags, price bands</small>
-            </div>
-            <div class="research-room room-risk office-object" aria-label="Risk research room">
-              <span class="room-label">Risk</span>
-              <strong id="riskRoomStatus">Watchouts</strong>
-              <small>Copy risk, saturation, timing</small>
-            </div>
-
-            <div class="board office-object" aria-label="Digital trend board">
-              <div class="board-header">
-                <span>Signal Board</span>
-                <span id="boardScore">--</span>
-              </div>
-              <div class="board-post">
-                <span id="boardCategory">Waiting</span>
-                <strong id="boardTitle">No trend posted yet</strong>
-                <small id="boardProduct">The next decoded design signal will post here.</small>
+          <article class="manager-suite agent-card" data-agent="manager">
+            <div class="agent-topline">
+              <span class="agent-avatar manager-avatar" aria-hidden="true"></span>
+              <div>
+                <span class="agent-role">Manager</span>
+                <strong id="managerDirective">Prioritize the project with the clearest path to revenue.</strong>
               </div>
             </div>
-
-            <div class="market-hut office-object" aria-hidden="true">
-              <span class="hut-roof"></span>
-              <span class="hut-wall"></span>
-              <span class="hut-door"></span>
-              <span class="hut-window hut-window-left"></span>
-              <span class="hut-window hut-window-right"></span>
+            <p id="managerReason">Waiting for agents to report demand, design, sales, marketing, and risk.</p>
+            <div class="score-strip">
+              <span>Fruit score</span>
+              <strong id="boardScore">--</strong>
             </div>
+          </article>
 
-            <div class="manager-room office-object" aria-label="Manager command room">
-              <span class="room-label">Manager</span>
-              <strong id="managerDirective">Prioritize highest fruit score</strong>
-              <small id="managerReason">Waiting for enough signal to route the team.</small>
-              <div class="project-board" aria-hidden="true">
-                <span class="project-node project-shirt" data-project="shirt">T</span>
-                <span class="project-node project-cup" data-project="cup">C</span>
-                <span class="project-node project-gear" data-project="gear">P</span>
+          <section class="agent-grid" aria-label="Autonomous departments">
+            <article class="agent-card" data-agent="demand">
+              <div class="agent-topline">
+                <span class="agent-avatar" aria-hidden="true"></span>
+                <div>
+                  <span class="agent-role">Demand agent</span>
+                  <strong id="demandRoomStatus">Watching trend velocity</strong>
+                </div>
               </div>
-            </div>
+              <p id="demandReport">No search-demand report yet.</p>
+            </article>
 
-            <div class="desk office-object" aria-label="Agent desk">
-              <div class="monitor">
-                <span id="monitorText">TREND DB</span>
+            <article class="agent-card" data-agent="market">
+              <div class="agent-topline">
+                <span class="agent-avatar" aria-hidden="true"></span>
+                <div>
+                  <span class="agent-role">Market agent</span>
+                  <strong id="marketRoomStatus">Mapping where it is selling</strong>
+                </div>
               </div>
-              <div class="keyboard" aria-hidden="true"></div>
-              <div class="chair" aria-hidden="true"></div>
-            </div>
+              <p id="marketReport">No marketplace report yet.</p>
+            </article>
 
-            <div class="plant office-object" aria-hidden="true">
-              <span></span>
-            </div>
-            <div class="file-cabinet office-object" aria-hidden="true"></div>
-            <div class="market-crate office-object" aria-hidden="true"></div>
+            <article class="agent-card" data-agent="sales">
+              <div class="agent-topline">
+                <span class="agent-avatar" aria-hidden="true"></span>
+                <div>
+                  <span class="agent-role">Sales agent</span>
+                  <strong id="salesRoomStatus">Checking Etsy proxy</strong>
+                </div>
+              </div>
+              <p id="salesReport">No sales proxy report yet.</p>
+            </article>
 
-            <div class="worker worker-demand" data-worker="demand" aria-label="Demand research worker">
-              <span class="worker-head"></span>
-              <span class="worker-body"></span>
-              <span class="worker-screen">KW</span>
-            </div>
-            <div class="worker worker-market" data-worker="market" aria-label="Marketplace research worker">
-              <span class="worker-head"></span>
-              <span class="worker-body"></span>
-              <span class="worker-screen">SELL</span>
-            </div>
-            <div class="worker worker-design" data-worker="design" aria-label="Design research worker">
-              <span class="worker-head"></span>
-              <span class="worker-body"></span>
-              <span class="worker-screen">FIG</span>
-            </div>
-            <div class="worker worker-sales" data-worker="sales" aria-label="Sales research worker">
-              <span class="worker-head"></span>
-              <span class="worker-body"></span>
-              <span class="worker-screen">ETSY</span>
-            </div>
-            <div class="worker worker-risk" data-worker="risk" aria-label="Risk research worker">
-              <span class="worker-head"></span>
-              <span class="worker-body"></span>
-              <span class="worker-screen">IP</span>
-            </div>
-            <div class="worker manager-worker" data-worker="manager" aria-label="Manager worker">
-              <span class="worker-head"></span>
-              <span class="worker-body"></span>
-              <span class="worker-screen">ROI</span>
-            </div>
+            <article class="agent-card" data-agent="design">
+              <div class="agent-topline">
+                <span class="agent-avatar" aria-hidden="true"></span>
+                <div>
+                  <span class="agent-role">Design agent</span>
+                  <strong id="designRoomStatus">Preparing Figma direction</strong>
+                </div>
+              </div>
+              <p id="designReport">No design direction yet.</p>
+            </article>
 
-            <div class="agent-shadow" aria-hidden="true"></div>
-            <div class="trend-card-carry" id="carryCard" aria-hidden="true">TREND</div>
-            <div class="agent" id="agentSprite" aria-label="AI agent character">
-              <span class="agent-head"></span>
-              <span class="agent-body"></span>
-              <span class="agent-arm agent-arm-left"></span>
-              <span class="agent-arm agent-arm-right"></span>
-              <span class="agent-leg agent-leg-left"></span>
-              <span class="agent-leg agent-leg-right"></span>
-            </div>
-          </div>
+            <article class="agent-card" data-agent="marketing">
+              <div class="agent-topline">
+                <span class="agent-avatar" aria-hidden="true"></span>
+                <div>
+                  <span class="agent-role">Marketing agent</span>
+                  <strong id="marketingRoomStatus">Building launch plan</strong>
+                </div>
+              </div>
+              <p id="marketingReport">No marketing plan yet.</p>
+            </article>
+
+            <article class="agent-card" data-agent="risk">
+              <div class="agent-topline">
+                <span class="agent-avatar" aria-hidden="true"></span>
+                <div>
+                  <span class="agent-role">Risk agent</span>
+                  <strong id="riskRoomStatus">Scanning watchouts</strong>
+                </div>
+              </div>
+              <p id="riskReport">No risk report yet.</p>
+            </article>
+          </section>
         </section>
 
-        <section class="review-console" aria-label="Current trend review details">
-          <div class="console-header">
-            <div>
-              <p class="eyebrow">Current post</p>
-              <h2 id="listingTitle">Waiting for first trend review</h2>
-            </div>
-            <a id="listingLink" class="source-link" href="#" target="_blank" rel="noreferrer">
-              Open source
+        <section class="report-deck" aria-label="Current cycle reports">
+          <section class="hero-report">
+            <a id="imageResultLink" class="image-result-frame" href="#" target="_blank" rel="noreferrer">
+              <img id="imageResult" alt="" hidden />
+              <span id="imageResultFallback">No source image yet</span>
             </a>
-          </div>
-
-          <div class="review-layout">
-            <section class="image-result-panel" aria-label="Trend image result">
-              <a id="imageResultLink" class="image-result-frame" href="#" target="_blank" rel="noreferrer">
-                <img id="imageResult" alt="" hidden />
-                <span id="imageResultFallback">No source image yet</span>
-              </a>
-              <div>
-                <h3>Image result</h3>
-                <p id="imageResultCaption">The agent will show the source image when the trend feed provides one.</p>
-              </div>
-            </section>
-
-            <dl class="score-grid">
-              <div>
-                <dt>Review score</dt>
-                <dd id="reviewScore">--</dd>
-              </div>
-              <div>
-                <dt>Product</dt>
-                <dd id="listingPrice">--</dd>
-              </div>
-              <div>
-                <dt>Source</dt>
-                <dd id="sourceMode">--</dd>
-              </div>
-              <div>
-                <dt>Where</dt>
-                <dd id="marketText">--</dd>
-              </div>
-            </dl>
-
-            <div class="insight-block">
-              <h3>Designer brief</h3>
+            <div class="hero-copy">
+              <p class="eyebrow">Manager summary</p>
+              <h3 id="boardTitle">No product candidate yet</h3>
               <p id="summaryText">
-                The agent will scan a top trend, decode the visual opportunity, then post it to
-                the signal board and clickable archive.
+                The manager will coordinate agents, choose the highest-potential merch direction,
+                and report the next action here.
               </p>
+              <dl class="signal-metrics">
+                <div>
+                  <dt>Product</dt>
+                  <dd id="listingPrice">--</dd>
+                </div>
+                <div>
+                  <dt>Category</dt>
+                  <dd id="boardCategory">--</dd>
+                </div>
+                <div>
+                  <dt>Where</dt>
+                  <dd id="marketText">--</dd>
+                </div>
+                <div>
+                  <dt>Source</dt>
+                  <dd id="sourceMode">--</dd>
+                </div>
+              </dl>
+              <a id="listingLink" class="source-link" href="#" target="_blank" rel="noreferrer">Open source</a>
             </div>
+          </section>
 
-            <div class="insight-block rollout-block">
-              <h3>AI rollout plan</h3>
-              <ul id="designPlanList"></ul>
-            </div>
+          <section class="report-panel">
+            <h3>Why it is popular</h3>
+            <ul id="reasonList"></ul>
+          </section>
 
-            <div class="insight-columns">
-              <section>
-                <h3>Why it is popular</h3>
-                <ul id="reasonList"></ul>
-              </section>
-              <section>
-                <h3>Graphical elements</h3>
-                <ul id="elementList"></ul>
-              </section>
-              <section>
-                <h3>Research links</h3>
-                <ul id="sourceLinkList" class="source-link-list"></ul>
-              </section>
-              <section>
-                <h3>Watchouts</h3>
-                <ul id="watchoutList"></ul>
-              </section>
-            </div>
-          </div>
+          <section class="report-panel">
+            <h3>Design direction</h3>
+            <ul id="elementList"></ul>
+          </section>
+
+          <section class="report-panel">
+            <h3>Marketing rollout</h3>
+            <ul id="marketingPlanList"></ul>
+          </section>
+
+          <section class="report-panel">
+            <h3>Production plan</h3>
+            <ul id="designPlanList"></ul>
+          </section>
+
+          <section class="report-panel">
+            <h3>Research links</h3>
+            <ul id="sourceLinkList" class="source-link-list"></ul>
+          </section>
+
+          <section class="report-panel">
+            <h3>Watchouts</h3>
+            <ul id="watchoutList"></ul>
+          </section>
         </section>
       </section>
     </main>
