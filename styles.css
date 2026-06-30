@@ -694,6 +694,58 @@ h3 {
     var(--panel);
 }
 
+.design-studio-panel {
+  min-height: 260px;
+  max-height: 430px;
+}
+
+.design-concept-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 10px;
+}
+
+.design-concept-card {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(0, 255, 102, 0.24);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.design-concept-card img {
+  width: 100%;
+  aspect-ratio: 5 / 6;
+  border: 1px solid rgba(221, 255, 233, 0.16);
+  background: #020403;
+  object-fit: cover;
+}
+
+.design-concept-card strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.design-concept-card span {
+  color: var(--amber);
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.44rem;
+  line-height: 1.45;
+  text-transform: uppercase;
+}
+
+.design-concept-card p,
+.empty-state {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
 ul {
   display: grid;
   gap: 7px;

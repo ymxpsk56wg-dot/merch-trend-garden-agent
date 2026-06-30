@@ -8,7 +8,7 @@ const state = {
   lastReview: null,
   history: [],
   selectedHistoryId: null,
-  designOrder: null,
+  designStudio: null,
   countdownTimerId: null,
   missionTimerIds: [],
   managerFeed: [],
@@ -33,14 +33,14 @@ const summaryText = document.querySelector("#summaryText");
 const reasonList = document.querySelector("#reasonList");
 const elementList = document.querySelector("#elementList");
 const marketingPlanList = document.querySelector("#marketingPlanList");
-const figmaConnectionList = document.querySelector("#figmaConnectionList");
+const designConceptGrid = document.querySelector("#designConceptGrid");
 const salesOutletList = document.querySelector("#salesOutletList");
 const managerRecommendationList = document.querySelector("#managerRecommendationList");
 const sourceLinkList = document.querySelector("#sourceLinkList");
 const watchoutList = document.querySelector("#watchoutList");
 const reviewNowButton = document.querySelector("#reviewNowButton");
-const orderDesignButton = document.querySelector("#orderDesignButton");
-const designOrderStatus = document.querySelector("#designOrderStatus");
+const generateDesignButton = document.querySelector("#generateDesignButton");
+const designStudioStatus = document.querySelector("#designStudioStatus");
 const reviewCount = document.querySelector("#reviewCount");
 const nextRun = document.querySelector("#nextRun");
 const countdownValue = document.querySelector("#countdownValue");
@@ -83,8 +83,8 @@ const agents = {
   },
   design: {
     label: "Design agent",
-    active: "Drafting Figma direction",
-    idle: "Preparing Figma direction",
+    active: "Generating in-app concepts",
+    idle: "Preparing in-app concepts",
   },
   marketing: {
     label: "Marketing agent",
@@ -298,74 +298,43 @@ function marketingPlan(review) {
   ];
 }
 
-function renderFigmaConnection(review) {
-  const connection = review.figmaConnection || review.designPlan?.figmaConnection;
-  const items = [];
-  const order = state.designOrder;
+function renderDesignStudio(designStudio) {
+  state.designStudio = designStudio || null;
 
-  if (order) {
-    items.push({
-      label:
-        order.status === "completed"
-          ? `Design order completed in Figma: ${order.figmaFrameName || order.id}`
-          : `Design order queued: run the hosted plugin in Figma to create ${order.review?.product || "the board"}`,
-      url: order.pluginManifestUrl || connection?.pluginManifestUrl || "/figma-plugin/manifest.json",
-      type: "figma",
-    });
+  if (!designConceptGrid || !designStudioStatus) {
+    return;
   }
 
-  if (connection?.pluginManifestUrl) {
-    items.push({
-      label: `Plugin manifest: ${connection.status || "plugin-ready"}`,
-      url: connection.pluginManifestUrl,
-      type: "figma",
-    });
+  designConceptGrid.replaceChildren();
+
+  if (!designStudio?.variants?.length) {
+    designStudioStatus.textContent = "No concepts generated yet.";
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "Run a cycle or generate designs to create in-app SVG concepts.";
+    designConceptGrid.append(empty);
+    return;
   }
 
-  if (connection?.pluginCodeUrl) {
-    items.push({
-      label: "Plugin code",
-      url: connection.pluginCodeUrl,
-      type: "figma",
-    });
-  }
+  designStudioStatus.textContent = `${designStudio.variants.length} concepts generated in-app.`;
 
-  (connection?.nextSteps || []).forEach((step) => {
-    items.push({
-      label: step,
-      url: connection.pluginManifestUrl || "#",
-      type: "figma",
-    });
+  designStudio.variants.forEach((variant) => {
+    const card = document.createElement("article");
+    const image = document.createElement("img");
+    const title = document.createElement("strong");
+    const meta = document.createElement("span");
+    const reason = document.createElement("p");
+
+    card.className = "design-concept-card";
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(variant.svg)}`;
+    image.alt = variant.title;
+    title.textContent = variant.title;
+    meta.textContent = variant.format || "SVG concept";
+    reason.textContent = variant.rationale?.[0] || designStudio.brief || "Original in-app concept.";
+
+    card.append(image, title, meta, reason);
+    designConceptGrid.append(card);
   });
-
-  setSourceLinks(figmaConnectionList, items.length ? items : [{
-    label: "Figma plugin is waiting for the first design brief.",
-    url: "/figma-plugin/manifest.json",
-    type: "figma",
-  }]);
-}
-
-function renderDesignOrder(order) {
-  state.designOrder = order || null;
-
-  if (!designOrderStatus) {
-    return;
-  }
-
-  if (!order) {
-    designOrderStatus.textContent = "No design order queued.";
-    return;
-  }
-
-  const created = order.createdAt ? formatClock(new Date(order.createdAt)) : "now";
-  designOrderStatus.textContent =
-    order.status === "completed"
-      ? `Completed in Figma: ${order.figmaFrameName || order.id}`
-      : `Queued ${created}: run the hosted Figma plugin.`;
-
-  if (state.lastReview) {
-    renderFigmaConnection(state.lastReview);
-  }
 }
 
 function renderSalesOutlets(review) {
@@ -407,7 +376,7 @@ function renderAgentReports(review, entry) {
 
   demandReport.textContent = demandLine;
   salesReport.textContent = salesLine;
-  designReport.textContent = `${designLine} Figma connection: ${(review.figmaConnection || review.designPlan?.figmaConnection)?.status || "plugin-ready"}.`;
+  designReport.textContent = `${designLine} Designs render inside the app as original SVG concepts.`;
   marketingReport.textContent = marketingLine;
   marketReport.textContent = `${marketLine} ${outletCount} sales outlets are available for routing.`;
   riskReport.textContent = riskLine;
@@ -483,7 +452,7 @@ function renderReviewEntry(entry) {
   setList(reasonList, review.popularityReasons || review.signals, "No popularity reasoning found in the trend metadata.");
   setList(elementList, review.graphicElements, "No graphical elements were inferred yet.");
   setList(marketingPlanList, marketingPlan(review), "No marketing plan generated yet.");
-  renderFigmaConnection(review);
+  renderDesignStudio(review.designStudio || state.designStudio);
   renderSalesOutlets(review);
   setList(managerRecommendationList, review.workplaceRecommendations, "No manager workplace updates generated yet.");
   setList(designPlanList, review.designPlan?.rollout, "No production rollout generated yet.");
@@ -591,9 +560,9 @@ async function fetchReview(trigger) {
   return payload;
 }
 
-async function fetchDesignOrder() {
+async function fetchDesigns() {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/design-order`, {
+    const response = await fetch(`${API_BASE_URL}/api/designs`, {
       headers: { Accept: "application/json" },
     });
 
@@ -602,24 +571,24 @@ async function fetchDesignOrder() {
     }
 
     const payload = await response.json();
-    renderDesignOrder(payload.order || null);
+    renderDesignStudio(payload.designStudio || null);
   } catch {
-    renderDesignOrder(null);
+    renderDesignStudio(null);
   }
 }
 
-async function orderFigmaDesign() {
-  if (state.loading || orderDesignButton?.disabled) {
+async function generateInAppDesigns() {
+  if (state.loading || generateDesignButton?.disabled) {
     return;
   }
 
-  orderDesignButton.disabled = true;
-  setAgentStatus("design", "working", "Queuing Figma order");
-  agentTask.textContent = "Design agent sending order to Figma queue";
-  addManagerFeed("Design order sent to the Figma queue.");
+  generateDesignButton.disabled = true;
+  setAgentStatus("design", "working", "Generating concepts");
+  agentTask.textContent = "Design agent generating in-app concepts";
+  addManagerFeed("Design agent started in-app concept generation.");
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/design-order`, {
+    const response = await fetch(`${API_BASE_URL}/api/designs`, {
       method: "POST",
       headers: {
         Accept: "application/json",
@@ -630,18 +599,18 @@ async function orderFigmaDesign() {
     const payload = await response.json();
 
     if (!response.ok) {
-      throw new Error(payload.error || "Design order failed.");
+      throw new Error(payload.error || "Design generation failed.");
     }
 
-    renderDesignOrder(payload.order);
-    setAgentStatus("design", "done", "Figma order queued");
-    addManagerFeed("Designer agent is waiting for the hosted Figma plugin to run.");
+    renderDesignStudio(payload.designStudio);
+    setAgentStatus("design", "done", "Concepts generated");
+    addManagerFeed("Design agent posted original SVG concepts inside the app.");
   } catch (error) {
     setAgentStatus("design", "idle", agents.design.idle);
-    designOrderStatus.textContent = error.message;
-    addManagerFeed(`Design order failed: ${error.message}`);
+    designStudioStatus.textContent = error.message;
+    addManagerFeed(`Design generation failed: ${error.message}`);
   } finally {
-    orderDesignButton.disabled = false;
+    generateDesignButton.disabled = false;
   }
 }
 
@@ -685,7 +654,7 @@ async function runReview(trigger) {
     await runAgentPhase("demand", review.popularityReasons?.[0] || review.signals?.[0], 300);
     await runAgentPhase("market", `${review.market || payload.market || "US"} market context collected.`, 300);
     await runAgentPhase("sales", review.salesSignal?.summary, 300);
-    await runAgentPhase("design", review.designPlan?.direction || review.graphicElements?.[0], 420);
+    await runAgentPhase("design", review.designStudio?.brief || review.designPlan?.direction || review.graphicElements?.[0], 420);
     await runAgentPhase("marketing", marketingPlan(review)[0], 420);
     await runAgentPhase("risk", review.watchouts?.[0], 360);
 
@@ -724,8 +693,8 @@ reviewNowButton.addEventListener("click", () => {
   runReview("manual");
 });
 
-orderDesignButton?.addEventListener("click", () => {
-  orderFigmaDesign();
+generateDesignButton?.addEventListener("click", () => {
+  generateInAppDesigns();
 });
 
 eventLog.addEventListener("click", (event) => {
@@ -753,5 +722,5 @@ state.countdownTimerId = window.setInterval(renderCountdown, 1000);
 setAllAgents("idle");
 renderCountdown();
 loadApiSources();
-fetchDesignOrder();
+fetchDesigns();
 runReview("initial");

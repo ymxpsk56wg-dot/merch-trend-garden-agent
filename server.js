@@ -59,31 +59,9 @@ let cacheFetchedAt = 0;
 let cursor = 0;
 let categoryCursor = 0;
 let latestDesignBrief = null;
-let latestDesignOrder = null;
-
-function normalizedFigmaFileKey(value = process.env.FIGMA_FILE_KEY || "") {
-  const text = String(value || "").trim();
-
-  if (!text) {
-    return "";
-  }
-
-  const urlMatch = text.match(/figma\.com\/(?:file|design)\/([^/?#]+)/i);
-
-  if (urlMatch) {
-    return urlMatch[1];
-  }
-
-  return text.split(/[/?#]/)[0];
-}
-
-function hasFigmaRestConfig() {
-  return Boolean(process.env.FIGMA_ACCESS_TOKEN && normalizedFigmaFileKey());
-}
+let latestDesignStudio = null;
 
 function sourceCatalog() {
-  const figmaRestConfigured = hasFigmaRestConfig();
-
   return [
     {
       id: "google-trends",
@@ -113,12 +91,12 @@ function sourceCatalog() {
       where: "Marketplace",
     },
     {
-      id: "figma",
-      name: "Figma design department",
-      status: figmaRestConfigured ? "active" : "plugin-ready",
-      statusLabel: figmaRestConfigured ? "Token and file found" : "Plugin ready",
-      signal: "Creates a Figma concept board from the manager direction, sales proxy, design cues, and marketing plan",
-      setup: "Install the generated plugin from /figma-plugin/manifest.json. Optional REST read/export can use FIGMA_ACCESS_TOKEN and FIGMA_FILE_KEY.",
+      id: "design-studio",
+      name: "In-app design agent",
+      status: "active",
+      statusLabel: "Built in",
+      signal: "Generates original SVG merch concepts inside the app from the manager brief",
+      setup: "No external design tool required. Manual OpenAI reviews can improve the brief; visual rendering is handled in-app.",
       where: "Design workflow",
     },
     {
@@ -453,7 +431,7 @@ function outletCatalog(query, product) {
       status: PRINTIFY_API_TOKEN ? "connected" : "setup-needed",
       role: "Fastest print-on-demand route for tees, mugs, stickers, totes, and variants.",
       nextStep: PRINTIFY_API_TOKEN
-        ? "Use the approved Figma artwork to generate POD product drafts."
+        ? "Use the approved in-app SVG concept to generate POD product drafts."
         : "Create a Printify API token and add PRINTIFY_API_TOKEN.",
       link: "https://printify.com/app/account/api",
     },
@@ -506,28 +484,6 @@ function outletCatalog(query, product) {
   ];
 }
 
-function figmaConnectionStatus() {
-  const fileKey = normalizedFigmaFileKey();
-  const restConfigured = Boolean(process.env.FIGMA_ACCESS_TOKEN && fileKey);
-
-  return {
-    status: restConfigured ? "rest-connected" : "plugin-ready",
-    pluginManifestUrl: `${PUBLIC_SITE_URL}/figma-plugin/manifest.json`,
-    pluginCodeUrl: `${PUBLIC_SITE_URL}/figma-plugin/code.js`,
-    fileKey,
-    nextSteps: restConfigured
-      ? [
-          "Figma REST token and file key are configured for file read/export checks.",
-          "Run the hosted Figma plugin inside your Figma account to create editable design boards.",
-        ]
-      : [
-          "Install the hosted Figma plugin from the manifest URL.",
-          "Run the plugin inside Figma; it consumes queued /api/design-order work or falls back to /api/design-brief.",
-          "Optional: add FIGMA_ACCESS_TOKEN and FIGMA_FILE_KEY for REST status checks.",
-        ],
-  };
-}
-
 function managerWorkplaceRecommendations(review, salesSignal) {
   const recommendations = [];
 
@@ -543,9 +499,7 @@ function managerWorkplaceRecommendations(review, salesSignal) {
     recommendations.push("Revenue bottleneck: add a Shopify-owned storefront path so the team is not dependent on marketplace approval.");
   }
 
-  if (!process.env.FIGMA_ACCESS_TOKEN || !normalizedFigmaFileKey()) {
-    recommendations.push("Design workflow: use the Figma plugin now, then add FIGMA_ACCESS_TOKEN and FIGMA_FILE_KEY for account/file status checks.");
-  }
+  recommendations.push("Design workflow: the in-app Design agent can generate SVG concepts immediately; use external tools only for later polish.");
 
   if (salesSignal?.status !== "active") {
     recommendations.push("Evidence quality: Sales agent needs a connected outlet API or it can only report proxy links, not richer listing evidence.");
@@ -555,7 +509,7 @@ function managerWorkplaceRecommendations(review, salesSignal) {
     recommendations.push("Risk workflow: add a stricter IP/saturation checklist before any product upload for this cycle.");
   }
 
-  recommendations.push("Next workplace upgrade: add a Draft Product agent that takes manager-approved Figma outputs and creates Printify/Shopify draft payloads.");
+  recommendations.push("Next workplace upgrade: add a Draft Product agent that turns approved in-app SVG concepts into Printify/Shopify draft payloads.");
 
   return recommendations.slice(0, 6);
 }
@@ -855,6 +809,126 @@ function buildDesignerBrief(title, product, popularityReasons, graphicElements) 
   return `Design brief for ${product}: create an original merch concept around "${title}". The reason to test it is ${popularityReasons[0].toLowerCase()} Start with ${graphicElements[0].replace("Primary motif: ", "").toLowerCase()} Keep the design ownable, simple enough for print, and clear without relying on protected marks.`;
 }
 
+function escapeSvg(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function designHash(value) {
+  return String(value || "").split("").reduce((hash, char) => {
+    return (hash * 31 + char.charCodeAt(0)) >>> 0;
+  }, 2166136261);
+}
+
+function paletteForReview(review) {
+  const palettes = [
+    ["#00ff66", "#07140c", "#ddffe9", "#c6ff6b", "#ff4f6d"],
+    ["#62d8ff", "#08131f", "#e9fbff", "#f8d66d", "#ff6b90"],
+    ["#f7f052", "#10120a", "#fffbd1", "#00c2a8", "#ff6b35"],
+    ["#ff6b90", "#18080f", "#ffe6ef", "#6df2c1", "#f7c948"],
+  ];
+  return palettes[designHash(review.title) % palettes.length];
+}
+
+function cleanDesignWords(review) {
+  const words = String(review.title || review.category || "trend")
+    .replace(/[^a-z0-9\s]/gi, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 2 && !/official|copyright|trademark|brand/i.test(word))
+    .slice(0, 5);
+
+  return words.length ? words : ["trend", "signal"];
+}
+
+function buildDesignSvg(review, variant, index) {
+  const [primary, background, ink, accent, hot] = paletteForReview(review);
+  const words = cleanDesignWords(review);
+  const headline = escapeSvg(words.slice(0, 2).join(" ").toUpperCase());
+  const subline = escapeSvg((review.product || "merch").toUpperCase());
+  const cue = escapeSvg((review.graphicElements?.[0] || "Original symbol system").replace(/^Primary motif:\s*/i, ""));
+  const offset = (designHash(`${review.title}-${variant}`) % 80) - 40;
+
+  if (variant === "badge") {
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1080" role="img" aria-label="${headline} badge design">
+  <rect width="900" height="1080" fill="${background}"/>
+  <circle cx="450" cy="420" r="300" fill="none" stroke="${primary}" stroke-width="26"/>
+  <circle cx="450" cy="420" r="226" fill="${primary}" opacity=".15" stroke="${accent}" stroke-width="10"/>
+  <path d="M292 420c70-142 246-142 316 0-70 142-246 142-316 0Z" fill="${ink}" opacity=".94"/>
+  <circle cx="450" cy="420" r="72" fill="${hot}"/>
+  <path d="M450 205v430M235 420h430" stroke="${background}" stroke-width="22" stroke-linecap="round" opacity=".78"/>
+  <text x="450" y="820" text-anchor="middle" fill="${ink}" font-family="Arial Black, Impact, sans-serif" font-size="76" font-weight="900">${headline}</text>
+  <text x="450" y="895" text-anchor="middle" fill="${accent}" font-family="Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="8">${subline}</text>
+  <text x="450" y="968" text-anchor="middle" fill="${primary}" font-family="Arial, sans-serif" font-size="24">${cue.slice(0, 64)}</text>
+</svg>`;
+  }
+
+  if (variant === "type") {
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1080" role="img" aria-label="${headline} typography design">
+  <rect width="900" height="1080" fill="${background}"/>
+  <g transform="translate(${offset} 0)">
+    <rect x="120" y="164" width="660" height="660" rx="0" fill="none" stroke="${primary}" stroke-width="18"/>
+    <path d="M140 250h620M140 742h620" stroke="${accent}" stroke-width="10" stroke-dasharray="28 18"/>
+    <text x="450" y="430" text-anchor="middle" fill="${ink}" font-family="Arial Black, Impact, sans-serif" font-size="104" font-weight="900">${headline}</text>
+    <text x="450" y="536" text-anchor="middle" fill="${primary}" font-family="Arial Black, Impact, sans-serif" font-size="86" font-weight="900">${escapeSvg(words.slice(2, 4).join(" ").toUpperCase() || "DROP")}</text>
+    <text x="450" y="650" text-anchor="middle" fill="${hot}" font-family="Arial, sans-serif" font-size="36" font-weight="800" letter-spacing="12">${subline}</text>
+    <circle cx="184" cy="190" r="34" fill="${hot}"/>
+    <circle cx="716" cy="798" r="34" fill="${accent}"/>
+  </g>
+</svg>`;
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1080" role="img" aria-label="${headline} repeat pattern design">
+  <rect width="900" height="1080" fill="${background}"/>
+  <defs>
+    <g id="spark">
+      <path d="M0-42 12-10 44 0 12 10 0 42-12 10-44 0-12-10Z" fill="${primary}"/>
+      <circle r="12" fill="${hot}"/>
+    </g>
+  </defs>
+  <g opacity=".95">
+    <use href="#spark" x="210" y="230"/>
+    <use href="#spark" x="690" y="270" transform="scale(.74)"/>
+    <use href="#spark" x="248" y="740" transform="scale(.62)"/>
+    <use href="#spark" x="660" y="805" transform="scale(.9)"/>
+  </g>
+  <path d="M180 515c102-170 438-170 540 0-102 170-438 170-540 0Z" fill="${primary}" opacity=".16" stroke="${accent}" stroke-width="14"/>
+  <text x="450" y="500" text-anchor="middle" fill="${ink}" font-family="Arial Black, Impact, sans-serif" font-size="88" font-weight="900">${headline}</text>
+  <text x="450" y="590" text-anchor="middle" fill="${primary}" font-family="Arial, sans-serif" font-size="34" font-weight="800" letter-spacing="10">${subline}</text>
+  <path d="M236 646h428" stroke="${hot}" stroke-width="16" stroke-linecap="square"/>
+</svg>`;
+}
+
+function buildInAppDesignStudio(review, salesSignal) {
+  const variants = [
+    ["badge", "Hero badge"],
+    ["type", "Typography lockup"],
+    ["pattern", "Icon repeat"],
+  ].map(([variant, title], index) => ({
+    id: `${variant}-${designHash(`${review.title}-${variant}`).toString(36)}`,
+    title,
+    product: review.product,
+    format: /drink|mug|tumbler/i.test(review.product) ? "drinkware-ready SVG" : "apparel-ready SVG",
+    rationale: [
+      review.graphicElements?.[index] || review.graphicElements?.[0] || "Original visual system from the trend brief.",
+      salesSignal?.topTags?.length
+        ? `Tag language considered: ${salesSignal.topTags.slice(0, 4).join(", ")}.`
+        : "Built from trend demand and manager direction while avoiding protected source artwork.",
+    ],
+    svg: buildDesignSvg(review, variant, index),
+  }));
+
+  return {
+    status: "generated",
+    generatedAt: new Date().toISOString(),
+    source: review.agentRuntime?.status === "active" ? "OpenAI-assisted agent brief" : "rule-based agent brief",
+    brief: review.designPlan?.direction || review.designerBrief || review.summary,
+    variants,
+  };
+}
+
 function shouldRunAiAgents(trigger) {
   if (!OPENAI_API_KEY || OPENAI_AGENT_MODE === "off") {
     return false;
@@ -1053,20 +1127,17 @@ function buildDesignPlan(review, salesSignal) {
   const topReason = review.popularityReasons?.[0] || review.signals?.[0] || "Current demand is moving.";
   const topTags = salesSignal?.topTags?.length ? salesSignal.topTags.slice(0, 5).join(", ") : "no marketplace tags yet";
   const salesOutlets = outletCatalog(review.title, review.product);
-  const figmaConnection = figmaConnectionStatus();
 
   return {
-    title: `Figma concept board: ${review.title}`,
+    title: `In-app concept board: ${review.title}`,
     projectType,
     proofLevel,
     direction: `Create an original ${review.product} concept for "${review.title}" using ${compactText(topVisualCue, 160).toLowerCase()}`,
     salesSummary,
-    figmaPlugin: {
-      manifestUrl: figmaConnection.pluginManifestUrl,
-      codeUrl: figmaConnection.pluginCodeUrl,
-      status: "plugin-ready",
+    designStudio: {
+      status: "ready",
+      action: "Generate original SVG concepts inside the app.",
     },
-    figmaConnection,
     salesOutlets,
     departments: {
       demand: review.aiReports?.demand || compactText(topReason, 160),
@@ -1096,7 +1167,7 @@ function buildDesignPlan(review, salesSignal) {
     rollout: [
       "Research worker validates demand and current geography.",
       "Sales worker checks Etsy/eBay proxies plus Shopify, Printify, Printful, Gelato, and Amazon Merch outlet fit.",
-      "Design worker creates the Figma concept board and first layout options in your Figma account through the hosted plugin.",
+      "Design worker generates original SVG concept options directly inside the app.",
       "Risk worker removes protected marks and flags saturation or event-timing problems.",
       "Manager ships only if fruit score, sales proxy, and visual clarity all stay above threshold.",
     ],
@@ -1142,9 +1213,8 @@ function enrichReviewWithSalesAndDesign(review, salesSignal) {
 
   enriched.designPlan = buildDesignPlan(enriched, salesSignal);
   enriched.salesOutlets = enriched.designPlan.salesOutlets;
-  enriched.figmaConnection = enriched.designPlan.figmaConnection;
   enriched.workplaceRecommendations = managerWorkplaceRecommendations(enriched, salesSignal);
-  enriched.designerBrief = `${enriched.designerBrief} Sales worker: ${salesSignal.summary} Figma worker: use the design-plan plugin to create the concept board and rollout plan.`;
+  enriched.designerBrief = `${enriched.designerBrief} Sales worker: ${salesSignal.summary} Design worker: generate in-app SVG concept options and a rollout plan.`;
 
   return enriched;
 }
@@ -1219,11 +1289,13 @@ async function handleReview(request, response) {
     );
     review.designPlan = buildDesignPlan(review, salesSignal);
     review.salesOutlets = review.designPlan.salesOutlets;
-    review.figmaConnection = review.designPlan.figmaConnection;
+    review.designStudio = buildInAppDesignStudio(review, salesSignal);
+    latestDesignStudio = review.designStudio;
     latestDesignBrief = {
       review,
       salesSignal,
       designBrief: review.designPlan,
+      designStudio: review.designStudio,
       updatedAt: new Date().toISOString(),
     };
 
@@ -1232,6 +1304,7 @@ async function handleReview(request, response) {
       query: review.category,
       market: review.market,
       review,
+      designStudio: review.designStudio,
       fetchedAt: new Date(cacheFetchedAt).toISOString(),
     });
   } catch (error) {
@@ -1272,7 +1345,6 @@ function handleOutlets(request, response) {
   sendJson(response, 200, {
     ok: true,
     outlets: outletCatalog(query, product),
-    figmaConnection: figmaConnectionStatus(),
   });
 }
 
@@ -1300,305 +1372,28 @@ function currentDesignPackage() {
   return latestDesignBrief || fallbackDesignBrief();
 }
 
-function createDesignOrder(payload = {}) {
-  const designPackage = currentDesignPackage();
-  const id = `figma-${Date.now().toString(36)}`;
-
-  latestDesignOrder = {
-    id,
-    status: "queued",
-    createdAt: new Date().toISOString(),
-    completedAt: "",
-    note: payload.note || "Create editable Figma concept board from the current manager brief.",
-    pluginManifestUrl: `${PUBLIC_SITE_URL}/figma-plugin/manifest.json`,
-    pluginCodeUrl: `${PUBLIC_SITE_URL}/figma-plugin/code.js`,
-    ...designPackage,
-  };
-
-  return latestDesignOrder;
-}
-
 function handleDesignBrief(request, response) {
   sendJson(response, 200, {
     ok: true,
     ...currentDesignPackage(),
-    designOrder: latestDesignOrder,
+    designStudio: latestDesignStudio,
   });
 }
 
-function handleDesignOrder(request, response) {
-  if (request.method === "POST") {
-    const order = createDesignOrder();
-    sendJson(response, 201, {
-      ok: true,
-      order,
-      figmaConnection: figmaConnectionStatus(),
-    });
-    return;
+function handleDesigns(request, response) {
+  const designPackage = currentDesignPackage();
+  const designStudio = buildInAppDesignStudio(designPackage.review, designPackage.salesSignal);
+  latestDesignStudio = designStudio;
+
+  if (latestDesignBrief?.review) {
+    latestDesignBrief.review.designStudio = designStudio;
+    latestDesignBrief.designStudio = designStudio;
   }
 
-  sendJson(response, 200, {
+  sendJson(response, request.method === "POST" ? 201 : 200, {
     ok: true,
-    order: latestDesignOrder,
-    figmaConnection: figmaConnectionStatus(),
+    designStudio,
   });
-}
-
-function handleDesignOrderComplete(request, response) {
-  let body = "";
-
-  request.on("data", (chunk) => {
-    body += chunk;
-  });
-
-  request.on("end", () => {
-    let payload = {};
-
-    try {
-      payload = body ? JSON.parse(body) : {};
-    } catch {
-      payload = {};
-    }
-
-    if (!latestDesignOrder || (payload.id && payload.id !== latestDesignOrder.id)) {
-      sendJson(response, 404, {
-        ok: false,
-        error: "No matching design order is queued.",
-      });
-      return;
-    }
-
-    latestDesignOrder = {
-      ...latestDesignOrder,
-      status: "completed",
-      completedAt: new Date().toISOString(),
-      completedBy: "figma-plugin",
-      figmaFrameName: payload.frameName || latestDesignOrder.figmaFrameName || "",
-    };
-
-    sendJson(response, 200, {
-      ok: true,
-      order: latestDesignOrder,
-    });
-  });
-}
-
-async function handleFigmaStatus(request, response) {
-  const fileKey = normalizedFigmaFileKey();
-  const status = {
-    ok: true,
-    plugin: {
-      status: "ready",
-      manifestUrl: `${PUBLIC_SITE_URL}/figma-plugin/manifest.json`,
-      codeUrl: `${PUBLIC_SITE_URL}/figma-plugin/code.js`,
-    },
-    rest: {
-      status: process.env.FIGMA_ACCESS_TOKEN && fileKey ? "configured" : "optional",
-      setup: "Set FIGMA_ACCESS_TOKEN and FIGMA_FILE_KEY only if you want REST read/export checks. Creating designs is handled by the plugin.",
-    },
-  };
-
-  if (!process.env.FIGMA_ACCESS_TOKEN || !fileKey) {
-    sendJson(response, 200, status);
-    return;
-  }
-
-  try {
-    const figmaUrl = new URL(`https://api.figma.com/v1/files/${fileKey}`);
-    figmaUrl.searchParams.set("depth", "1");
-    const figmaResponse = await fetchWithTimeout(
-      figmaUrl,
-      {
-        headers: {
-          Accept: "application/json",
-          "X-Figma-Token": process.env.FIGMA_ACCESS_TOKEN,
-        },
-      },
-      "Figma REST API",
-    );
-    const payload = await figmaResponse.json();
-
-    status.rest.status = figmaResponse.ok ? "configured" : "error";
-    status.rest.fileName = payload.name || "";
-    status.rest.error = figmaResponse.ok ? "" : payload.err || payload.message || `HTTP ${figmaResponse.status}`;
-    sendJson(response, figmaResponse.ok ? 200 : 502, status);
-  } catch (error) {
-    status.rest.status = "error";
-    status.rest.error = error.message;
-    sendJson(response, 502, status);
-  }
-}
-
-function sendText(response, statusCode, payload, contentType = "text/plain; charset=utf-8") {
-  response.writeHead(statusCode, {
-    "Content-Type": contentType,
-    "Cache-Control": "no-store",
-  });
-  response.end(payload);
-}
-
-function getRequestOrigin(request) {
-  const proto = request.headers["x-forwarded-proto"] || "http";
-  const host = request.headers["x-forwarded-host"] || request.headers.host;
-
-  if (host) {
-    return `${proto}://${host}`;
-  }
-
-  return PUBLIC_SITE_URL;
-}
-
-function handleFigmaPluginManifest(request, response) {
-  const origin = getRequestOrigin(request);
-  const allowedDomains = [...new Set([origin, PUBLIC_SITE_URL].filter(Boolean))];
-
-  sendText(
-    response,
-    200,
-    JSON.stringify(
-      {
-        name: "Merch Trend Matrix Design Department",
-        id: "merch-trend-matrix-design-department",
-        api: "1.0.0",
-        main: "code.js",
-        editorType: ["figma"],
-        networkAccess: {
-          allowedDomains,
-        },
-      },
-      null,
-      2,
-    ),
-    "application/json; charset=utf-8",
-  );
-}
-
-function figmaPluginCode(apiBaseUrl) {
-  return `
-const API_BASE_URL = ${JSON.stringify(apiBaseUrl)};
-const FONT = { family: "Inter", style: "Regular" };
-const BOLD_FONT = { family: "Inter", style: "Bold" };
-
-function rgb(hex) {
-  const value = hex.replace("#", "");
-  return {
-    r: parseInt(value.slice(0, 2), 16) / 255,
-    g: parseInt(value.slice(2, 4), 16) / 255,
-    b: parseInt(value.slice(4, 6), 16) / 255,
-  };
-}
-
-function paint(hex) {
-  return [{ type: "SOLID", color: rgb(hex) }];
-}
-
-async function addText(parent, text, x, y, width, size, fills, fontName = FONT) {
-  const node = figma.createText();
-  await figma.loadFontAsync(fontName);
-  node.fontName = fontName;
-  node.characters = text || "";
-  node.fontSize = size;
-  node.lineHeight = { unit: "PERCENT", value: 125 };
-  node.resize(width, Math.max(24, size * 1.6));
-  node.x = x;
-  node.y = y;
-  node.fills = fills;
-  parent.appendChild(node);
-  return node;
-}
-
-function addPanel(parent, x, y, width, height, fill, stroke) {
-  const rect = figma.createRectangle();
-  rect.x = x;
-  rect.y = y;
-  rect.resize(width, height);
-  rect.fills = paint(fill);
-  rect.strokes = paint(stroke);
-  rect.strokeWeight = 2;
-  parent.appendChild(rect);
-  return rect;
-}
-
-async function main() {
-  await figma.loadFontAsync(FONT);
-  await figma.loadFontAsync(BOLD_FONT);
-  const orderResponse = await fetch(API_BASE_URL + "/api/design-order");
-  const orderPayload = await orderResponse.json();
-  const order = orderPayload.order && orderPayload.order.status === "queued" ? orderPayload.order : null;
-  const payload = order || (await fetch(API_BASE_URL + "/api/design-brief").then((response) => response.json()));
-  const design = payload.designBrief;
-  const review = payload.review;
-
-  const frame = figma.createFrame();
-  frame.name = (order ? "Ordered Design " + order.id + " - " : "Merch Trend Matrix - ") + (review.title || "Design Brief");
-  frame.resize(1440, 1100);
-  frame.fills = paint("#07140c");
-  frame.x = figma.viewport.center.x - 720;
-  frame.y = figma.viewport.center.y - 510;
-
-  await addText(frame, "MERCH TREND MATRIX", 56, 48, 800, 42, paint("#00ff66"), BOLD_FONT);
-  await addText(frame, review.title || "Trend concept", 56, 108, 900, 26, paint("#ddffe9"), BOLD_FONT);
-  await addText(frame, design.direction, 56, 154, 860, 20, paint("#ddffe9"));
-
-  addPanel(frame, 56, 230, 410, 220, "#020403", "#00ff66");
-  await addText(frame, "DEMAND", 82, 258, 300, 20, paint("#c6ff6b"), BOLD_FONT);
-  await addText(frame, design.departments.demand, 82, 300, 330, 18, paint("#ddffe9"));
-
-  addPanel(frame, 514, 230, 410, 220, "#020403", "#00ff66");
-  await addText(frame, "SALES", 540, 258, 300, 20, paint("#c6ff6b"), BOLD_FONT);
-  await addText(frame, design.departments.sales, 540, 300, 330, 18, paint("#ddffe9"));
-
-  addPanel(frame, 972, 230, 410, 220, "#020403", "#00ff66");
-  await addText(frame, "RISK", 998, 258, 300, 20, paint("#c6ff6b"), BOLD_FONT);
-  await addText(frame, design.departments.risk, 998, 300, 330, 18, paint("#ddffe9"));
-
-  addPanel(frame, 56, 500, 630, 300, "#020403", "#28ff8a");
-  await addText(frame, "COMPOSITION", 82, 528, 400, 22, paint("#00ff66"), BOLD_FONT);
-  await addText(frame, design.composition.map((item) => "- " + item).join("\\n"), 82, 578, 540, 18, paint("#ddffe9"));
-
-  addPanel(frame, 744, 500, 638, 300, "#020403", "#28ff8a");
-  await addText(frame, "MARKETING PLAN", 770, 528, 420, 22, paint("#00ff66"), BOLD_FONT);
-  await addText(frame, design.marketingPlan.map((item) => "- " + item).join("\\n"), 770, 578, 540, 18, paint("#ddffe9"));
-
-  await addText(frame, "SALES OUTLETS", 56, 830, 360, 22, paint("#c6ff6b"), BOLD_FONT);
-  await addText(frame, (design.salesOutlets || []).slice(0, 5).map((outlet) => "- " + outlet.name + ": " + outlet.nextStep).join("\\n"), 56, 876, 460, 16, paint("#ddffe9"));
-
-  await addText(frame, "MANAGER UPDATES", 590, 830, 360, 22, paint("#c6ff6b"), BOLD_FONT);
-  await addText(frame, (review.workplaceRecommendations || []).slice(0, 4).map((item) => "- " + item).join("\\n"), 590, 876, 730, 16, paint("#ddffe9"));
-
-  await addText(frame, "PRINT PALETTE", 56, 972, 300, 22, paint("#c6ff6b"), BOLD_FONT);
-  design.palette.forEach((hex, index) => {
-    const swatch = figma.createRectangle();
-    swatch.x = 56 + index * 88;
-    swatch.y = 1016;
-    swatch.resize(54, 54);
-    swatch.fills = paint(hex);
-    swatch.strokes = paint("#ddffe9");
-    frame.appendChild(swatch);
-  });
-
-  figma.currentPage.appendChild(frame);
-  figma.viewport.scrollAndZoomIntoView([frame]);
-
-  if (order) {
-    await fetch(API_BASE_URL + "/api/design-order/complete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: order.id, frameName: frame.name }),
-    });
-  }
-
-  figma.closePlugin(order ? "Queued design order completed in Figma." : "Design department board created from the latest trend.");
-}
-
-main().catch((error) => {
-  figma.closePlugin("Figma hookup failed: " + error.message);
-});
-`.trimStart();
-}
-
-function handleFigmaPluginCode(request, response) {
-  sendText(response, 200, figmaPluginCode(getRequestOrigin(request)), "application/javascript; charset=utf-8");
 }
 
 const server = http.createServer((request, response) => {
@@ -1637,28 +1432,8 @@ const server = http.createServer((request, response) => {
     return;
   }
 
-  if ((request.method === "GET" || request.method === "POST") && url.pathname === "/api/design-order") {
-    handleDesignOrder(request, response);
-    return;
-  }
-
-  if (request.method === "POST" && url.pathname === "/api/design-order/complete") {
-    handleDesignOrderComplete(request, response);
-    return;
-  }
-
-  if (request.method === "GET" && url.pathname === "/api/figma/status") {
-    handleFigmaStatus(request, response);
-    return;
-  }
-
-  if (request.method === "GET" && url.pathname === "/figma-plugin/manifest.json") {
-    handleFigmaPluginManifest(request, response);
-    return;
-  }
-
-  if (request.method === "GET" && url.pathname === "/figma-plugin/code.js") {
-    handleFigmaPluginCode(request, response);
+  if ((request.method === "GET" || request.method === "POST") && url.pathname === "/api/designs") {
+    handleDesigns(request, response);
     return;
   }
 
