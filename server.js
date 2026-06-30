@@ -1161,6 +1161,7 @@ function getRequestOrigin(request) {
 
 function handleFigmaPluginManifest(request, response) {
   const origin = getRequestOrigin(request);
+  const allowedDomains = [...new Set([origin, PUBLIC_SITE_URL].filter(Boolean))];
 
   sendText(
     response,
@@ -1173,7 +1174,7 @@ function handleFigmaPluginManifest(request, response) {
         main: "code.js",
         editorType: ["figma"],
         networkAccess: {
-          allowedDomains: [origin, PUBLIC_SITE_URL],
+          allowedDomains,
         },
       },
       null,
