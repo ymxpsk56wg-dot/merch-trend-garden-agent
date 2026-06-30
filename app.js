@@ -31,6 +31,7 @@ const marketText = document.querySelector("#marketText");
 const summaryText = document.querySelector("#summaryText");
 const reasonList = document.querySelector("#reasonList");
 const elementList = document.querySelector("#elementList");
+const specificAssignmentList = document.querySelector("#specificAssignmentList");
 const marketingPlanList = document.querySelector("#marketingPlanList");
 const salesOutletList = document.querySelector("#salesOutletList");
 const managerRecommendationList = document.querySelector("#managerRecommendationList");
@@ -402,6 +403,37 @@ function sourceLinkRows(links = []) {
   }).join("");
 }
 
+function imageResultRows(images = []) {
+  return images.slice(0, 4).map((image) => {
+    const title = escapeHtml(image.title || "Image result");
+    const source = escapeHtml(image.source || "Image source");
+    const link = escapeHtml(image.link || image.url || "#");
+    const url = escapeHtml(image.url || "");
+    const imageTag = url ? `<img src="${url}" alt="${title}" />` : "";
+    return `
+      <li>
+        ${imageTag}
+        <strong>${title}</strong><br />
+        <span>${source}</span><br />
+        <span>${link}</span>
+      </li>
+    `;
+  }).join("");
+}
+
+function specificResearchItems(review) {
+  const specific = review.specificResearch || {};
+  return [
+    specific.buyerProfile && `Target buyer: ${specific.buyerProfile}`,
+    specific.assignment,
+    specific.productAngle && `Product angle: ${specific.productAngle}`,
+    specific.visualTreatment && `Visual treatment: ${specific.visualTreatment}`,
+    specific.colorAndType && `Color/type: ${specific.colorAndType}`,
+    specific.copyDirection && `Copy direction: ${specific.copyDirection}`,
+    specific.searchPhrases?.length && `Search phrases: ${specific.searchPhrases.join(", ")}`,
+  ].filter(Boolean);
+}
+
 function buildPrintReport(entry) {
   if (!printReport || !entry?.review) {
     return;
@@ -430,7 +462,12 @@ function buildPrintReport(entry) {
         <p>${escapeHtml(review.aiReports?.manager || review.summary || review.designerBrief)}</p>
       </section>
       ${reportList("Why It Is Popular", review.popularityReasons || review.signals, "No popularity reasoning found.")}
+      ${reportList("Specific Assignment", specificResearchItems(review), "No specific assignment details found.")}
       ${reportList("Design Direction", review.graphicElements, "No design direction found.")}
+      <section class="print-image-results">
+        <h2>Image Results</h2>
+        <ul>${imageResultRows(review.imageResults || []) || "<li>No image results available.</li>"}</ul>
+      </section>
       ${reportList("Marketing Rollout", marketingPlan(review), "No marketing rollout found.")}
       ${reportList("Watchouts", review.watchouts, "No watchouts found.")}
       <section>
@@ -487,6 +524,7 @@ function renderReviewEntry(entry) {
 
   setList(reasonList, review.popularityReasons || review.signals, "No popularity reasoning found in the trend metadata.");
   setList(elementList, review.graphicElements, "No graphical elements were inferred yet.");
+  setList(specificAssignmentList, specificResearchItems(review), "No specific assignment details generated yet.");
   setList(marketingPlanList, marketingPlan(review), "No marketing plan generated yet.");
   renderSalesOutlets(review);
   setList(managerRecommendationList, review.workplaceRecommendations, "No manager workplace updates generated yet.");

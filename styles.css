@@ -945,6 +945,29 @@ li {
     word-break: break-word;
   }
 
+  .print-image-results ul {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12pt;
+    padding-left: 0;
+    list-style: none;
+  }
+
+  .print-image-results li {
+    break-inside: avoid;
+    padding: 8pt;
+    border: 1px solid #ddd;
+  }
+
+  .print-image-results img {
+    display: block;
+    width: 100%;
+    max-height: 170pt;
+    margin-bottom: 7pt;
+    object-fit: cover;
+    border: 1px solid #ccc;
+  }
+
   @page {
     margin: 0.55in;
   }

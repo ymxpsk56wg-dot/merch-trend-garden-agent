@@ -269,7 +269,15 @@ function trendId(article) {
 
 function isUnsuitableTrend(article) {
   const text = trendArticleText(article);
-  return /\b(death|dead|dies|died|killed|killing|murder|shooting|massacre|war|bomb|attack|terror|hostage|funeral|obituary|crash|accident|disaster|tragedy|tragic|earthquake|flood|wildfire|fire|hurricane|tornado|disease|outbreak|pandemic|abuse|assault|rape|missing|kidnapped|lawsuit|trial|sentenced|arrested|scotus|supreme court|court|judge|ruling|verdict|law|legal|congress|senate|president|election|politics|tariff)\b/.test(text);
+  const titleWords = String(article.title || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  const titleHasCommercialContext = /\b(style|fashion|outfit|aesthetic|shirt|tee|mug|cup|sticker|poster|tote|gift|decor|recipe|garden|holiday|festival|sports|game|finals|season|book|reading|market|coffee|pet|fitness|travel)\b/.test(titleWords.join(" "));
+  const possiblePersonOnlyTrend = titleWords.length >= 2 && titleWords.length <= 3 && titleWords.every((word) => /^[a-z]+$/.test(word)) && !titleHasCommercialContext;
+
+  return possiblePersonOnlyTrend || /\b(death|dead|dies|died|killed|killing|murder|shooting|massacre|war|bomb|attack|terror|hostage|funeral|obituary|crash|accident|disaster|tragedy|tragic|earthquake|flood|wildfire|fire|hurricane|tornado|disease|outbreak|pandemic|abuse|assault|rape|missing|kidnapped|lawsuit|trial|sentenced|arrested|scotus|supreme court|court|judge|ruling|verdict|law|legal|congress|senate|president|election|politics|tariff|sony|playstation|nintendo|disney|marvel|star wars|pokemon|nike|adidas|apple|netflix)\b/.test(text);
 }
 
 function commercialDesignScore(article) {
@@ -715,6 +723,9 @@ function reviewTrend(article) {
   const productContext = `${category.category} / ${product}`;
   const popularityReasons = inferPopularityReasons(article, text, productContext);
   const graphicElements = inferGraphicElements(title, text, product);
+  const imageResults = buildImageResults(article);
+  const sourceLinks = buildSourceLinks(title, article);
+  const specificResearch = buildSpecificResearch(article, product, category.category);
   const signals = [];
   const watchouts = [];
   let score = 58;
@@ -780,8 +791,8 @@ function reviewTrend(article) {
     title,
     url: article.url || "#",
     image: article.image || "",
-    imageResults: buildImageResults(article),
-    sourceLinks: buildSourceLinks(title, article),
+    imageResults,
+    sourceLinks,
     source: article.source || "Google Trends",
     market: TREND_GEO,
     evidence: article.traffic ? `Google Trends traffic: ${article.traffic}` : "Google Trends RSS placement",
@@ -794,6 +805,7 @@ function reviewTrend(article) {
     score,
     popularityReasons,
     graphicElements,
+    specificResearch,
     designerBrief: buildDesignerBrief(title, product, popularityReasons, graphicElements),
     signals,
     watchouts,
@@ -875,11 +887,157 @@ function buildSourceLinks(title, article) {
   return links;
 }
 
+function titleKeywords(title) {
+  const stopWords = new Set([
+    "and",
+    "are",
+    "for",
+    "from",
+    "into",
+    "keep",
+    "the",
+    "this",
+    "that",
+    "with",
+    "follow",
+    "trending",
+    "trend",
+    "designs",
+    "graphics",
+  ]);
+
+  return String(title || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 2 && !stopWords.has(word))
+    .slice(0, 7);
+}
+
+function topicProfile(title, text) {
+  const keywords = titleKeywords(title);
+  const joined = `${text} ${keywords.join(" ")}`;
+
+  if (/\b(book|reading|reader|library|novel|romance)\b/.test(joined)) {
+    return {
+      buyer: "Book club hosts, romance/fantasy readers, librarians, and gift buyers shopping for reader identity products.",
+      angle: "Make the design feel like a cozy reader badge rather than a generic quote graphic.",
+      motif: "stacked books, annotated page tabs, tiny stars, tea or coffee cup, ribbon bookmark, and an arched club seal.",
+      palette: "cream paper, oxblood, forest green, muted lavender, and one metallic-gold accent.",
+      type: "serif headline paired with small handwritten marginalia or library-card microcopy.",
+      phrase: "short phrases like Reading Era, Book Club Dept, Currently Booked, or Chapter One Energy.",
+    };
+  }
+
+  if (/\b(farmers|market|produce|garden|tomato|fruit|kitchen)\b/.test(joined)) {
+    return {
+      buyer: "Farmers market shoppers, garden hobbyists, food-gift buyers, kitchen decor customers, and cottagecore audiences.",
+      angle: "Turn the trend into a cheerful local-market identity system that can scale from stickers to mugs.",
+      motif: "tomatoes, citrus, herbs, tote basket, hand-lettered price tags, gingham border, and sunburst produce badge.",
+      palette: "tomato red, basil green, butter yellow, cream, and a small sky-blue highlight.",
+      type: "friendly hand-painted script with a blocky market-stall sans for secondary words.",
+      phrase: "short phrases like Market Day, Fresh Picked, Local Produce Club, or Tomato Season.",
+    };
+  }
+
+  if (/\b(coquette|bow|pink|soft|ribbon|ballet)\b/.test(joined)) {
+    return {
+      buyer: "Gen Z gift buyers, fashion-aesthetic shoppers, bridal-party buyers, and soft-feminine apparel customers.",
+      angle: "Keep it delicate and wearable, with the bow as the recognizable hook and the copy as the giftable twist.",
+      motif: "ribbon bows, pearl dots, tiny hearts, lace frame, cameo oval, and a small handwritten label.",
+      palette: "soft pink, ivory, cherry red, charcoal ink, and pale blue as a cooling accent.",
+      type: "thin serif or fashion editorial type with small cursive details, avoiding childish bubble lettering.",
+      phrase: "short phrases like Bow Dept, Soft Launch, Ribbon Club, or Pretty Little Routine.",
+    };
+  }
+
+  if (/\b(drinkware|mug|coffee|tumbler|cup|personalized)\b/.test(joined)) {
+    return {
+      buyer: "Teacher-gift buyers, office coworkers, moms, bridesmaids, and customers looking for personalized daily-use gifts.",
+      angle: "Lead with personalization and repeat-use utility, not a one-off novelty joke.",
+      motif: "nameplate frame, small monogram, steam lines, desk icons, floral corners, and repeat pattern accents.",
+      palette: "warm cream, espresso, sage, dusty rose, and a clear dark text color for names.",
+      type: "clean rounded serif for names with compact sans labels that remain legible on curved surfaces.",
+      phrase: "personalized copy like [Name]'s Cup, Desk Fuel, Daily Sip Club, or Morning Routine.",
+    };
+  }
+
+  if (/\b(sport|sports|retro|varsity|pickleball|golf|club|team)\b/.test(joined)) {
+    return {
+      buyer: "Casual sports fans, recreational league players, dads, gym-class nostalgia buyers, and group-event shoppers.",
+      angle: "Create a fictional club identity so it feels athletic without using protected team marks.",
+      motif: "varsity crest, pennant, worn numbers, laurel, diagonal motion lines, and a small equipment icon.",
+      palette: "faded navy, vintage cream, washed red, athletic gold, and dark green.",
+      type: "condensed varsity block type with distressed edges and small collegiate sans labels.",
+      phrase: "short phrases like Weekend League, Court Club, Varsity Dept, or Rec Team Original.",
+    };
+  }
+
+  if (/\b(sticker|tote|fandom|aesthetic|microtrend)\b/.test(joined)) {
+    return {
+      buyer: "Sticker collectors, tote-bag shoppers, fandom-adjacent buyers, students, and aesthetic identity shoppers.",
+      angle: "Package the idea as a collectible mini-world with multiple small icons instead of one vague graphic.",
+      motif: "three-to-five icon set, label stickers, sparkle marks, tiny badge seals, and one strong central symbol.",
+      palette: "cream base, black outline, one saturated accent, one pastel accent, and one neutral shadow color.",
+      type: "small label-maker sans mixed with one expressive headline word.",
+      phrase: "short phrases like Tiny Fandom Kit, Aesthetic Dept, Main Character Errands, or Sticker Club.",
+    };
+  }
+
+  return {
+    buyer: "Gift buyers and trend-aware shoppers who want a wearable or useful product that signals a current interest.",
+    angle: "Translate the trend into an original identity badge, club mark, or phrase system rather than naming the source directly.",
+    motif: `symbols pulled from ${keywords.slice(0, 4).join(", ") || "the trend mood"}, simplified into one readable focal mark.`,
+    palette: "one dark ink, one warm neutral, one trend color, one contrast accent, and one quiet background color.",
+    type: "bold readable headline type with a smaller supporting label that still works in thumbnail view.",
+    phrase: `short, ownable phrases built around ${keywords.slice(0, 3).join(", ") || "the trend"} without protected names.`,
+  };
+}
+
+function buildSpecificResearch(article, product, category) {
+  const title = article.title || "Untitled trend signal";
+  const text = trendArticleText(article);
+  const keywords = titleKeywords(title);
+  const profile = topicProfile(title, text);
+  const baseQuery = keywords.length ? keywords.join(" ") : title;
+  const productUse =
+    product.includes("drinkware")
+      ? "11oz mug, 15oz mug, travel tumbler, and wraparound repeat"
+      : product.includes("sticker")
+        ? "die-cut sticker, sticker sheet, tote-bag pocket print, and small phone-case mark"
+        : product.includes("tote")
+          ? "tote-bag center print, small chest tee, sticker, and poster"
+          : "front graphic tee, comfort-colors style tee, sweatshirt, sticker, and tote";
+
+  return {
+    buyerProfile: profile.buyer,
+    assignment: `${category} assignment: build one merch system for ${product}, then adapt it to ${productUse}.`,
+    productAngle: profile.angle,
+    visualTreatment: profile.motif,
+    colorAndType: `${profile.palette} Use ${profile.type}`,
+    copyDirection: profile.phrase,
+    searchPhrases: [
+      `${baseQuery} ${product}`,
+      `${baseQuery} merch`,
+      `${baseQuery} gift`,
+      `${baseQuery} sticker`,
+      `${baseQuery} mug`,
+    ].slice(0, 5),
+    productionNotes: [
+      "Keep the main mark readable at 2 inches wide.",
+      "Limit the first test to two-to-four print colors plus the garment or mug base.",
+      "Avoid celebrity likenesses, protected team marks, logos, lyrics, and exact source artwork.",
+      "Create one hero composition and one simplified secondary icon before expanding variants.",
+    ],
+  };
+}
+
 function inferPopularityReasons(article, text, productContext) {
   const reasons = [];
+  const profile = topicProfile(article.title, text);
 
   if (article.traffic) {
-    reasons.push(`Search volume is rising now (${article.traffic} in Google Trends), so buyers may recognize the theme quickly.`);
+    reasons.push(`Search volume is rising now (${article.traffic} in Google Trends), giving the design a current-awareness hook for ${profile.buyer}`);
   } else {
     reasons.push("The topic is appearing in current search trends, which makes it useful for timely product ideation.");
   }
@@ -896,7 +1054,7 @@ function inferPopularityReasons(article, text, productContext) {
     reasons.push("The trend contains visual language a designer can translate directly into color, type, and composition.");
   }
 
-  reasons.push(`It is being reviewed against ${productContext}, so the idea can be converted into a concrete merch format instead of remaining a generic news topic.`);
+  reasons.push(`Specific product fit: ${productContext}. ${profile.angle}`);
 
   return reasons;
 }
@@ -937,7 +1095,8 @@ function inferGraphicElements(title, text, product) {
 }
 
 function buildDesignerBrief(title, product, popularityReasons, graphicElements) {
-  return `Design brief for ${product}: create an original merch concept around "${title}". The reason to test it is ${popularityReasons[0].toLowerCase()} Start with ${graphicElements[0].replace("Primary motif: ", "").toLowerCase()} Keep the design ownable, simple enough for print, and clear without relying on protected marks.`;
+  const profile = topicProfile(title, title.toLowerCase());
+  return `Design brief for ${product}: create an original merch direction around "${title}". Buyer: ${profile.buyer} Product angle: ${profile.angle} Visual treatment: ${profile.motif} Color/type: ${profile.palette} Use ${profile.type} Keep the design ownable, simple enough for print, and clear without protected marks.`;
 }
 function shouldRunAiAgents(trigger) {
   if (!OPENAI_API_KEY || OPENAI_AGENT_MODE === "off") {
@@ -962,6 +1121,7 @@ function compactAgentInput(review, salesSignal) {
     source: review.source,
     reasons: (review.popularityReasons || []).slice(0, 4),
     graphics: (review.graphicElements || []).slice(0, 4),
+    specificResearch: review.specificResearch,
     watchouts: (review.watchouts || []).slice(0, 4),
     sales: {
       status: salesSignal?.status,
@@ -1137,12 +1297,13 @@ function buildDesignPlan(review, salesSignal) {
   const topReason = review.popularityReasons?.[0] || review.signals?.[0] || "Current demand is moving.";
   const topTags = salesSignal?.topTags?.length ? salesSignal.topTags.slice(0, 5).join(", ") : "no marketplace tags yet";
   const salesOutlets = outletCatalog(review.title, review.product);
+  const specifics = review.specificResearch || buildSpecificResearch(review, review.product, review.category);
 
   return {
     title: `Design direction board: ${review.title}`,
     projectType,
     proofLevel,
-    direction: `Direct a human designer toward an original ${review.product} for "${review.title}" using ${compactText(topVisualCue, 160).toLowerCase()}`,
+    direction: `${specifics.assignment} ${specifics.productAngle} Visual treatment: ${specifics.visualTreatment}`,
     salesSummary,
     salesOutlets,
     departments: {
@@ -1155,17 +1316,15 @@ function buildDesignPlan(review, salesSignal) {
     },
     palette: ["#00ff66", "#ddffe9", "#c6ff6b", "#07140c", "#ff4f6d"],
     composition: [
-      projectType === "drinkware"
-        ? "Vertical badge or wraparound repeat that remains readable on a curved surface."
-        : "Center-front composition with one strong focal mark and readable short-form type.",
-      "Two-to-four print colors with one accent color reserved for urgency or proof.",
-      "Thick outline or boxed type treatment so the idea works as a thumbnail and on product mockups.",
+      specifics.visualTreatment,
+      specifics.colorAndType,
+      specifics.copyDirection,
     ],
     marketingPlan: review.aiMarketingPlan?.length
       ? review.aiMarketingPlan.slice(0, 5)
       : [
           `Positioning: ${proofLevel}; lead with the trend mood, not protected names.`,
-          `Audience test: buyers already searching "${review.category}" plus marketplace tags: ${topTags}.`,
+          `Audience test: ${specifics.buyerProfile} Compare against marketplace tags: ${topTags}.`,
           `Outlet ladder: start with ${salesOutlets[0].name}, validate POD with ${salesOutlets[1].name}, and keep Etsy/eBay as demand research until approved.`,
           "Offer ladder: launch one hero tee or mug, then adapt the same visual system to sticker/tote variants if the signal holds.",
           "Creative test: brief two typography variations and one illustrated-symbol variation before committing production time.",
@@ -1173,7 +1332,7 @@ function buildDesignPlan(review, salesSignal) {
     rollout: [
       "Research worker validates demand and current geography.",
       "Sales worker checks Etsy/eBay proxies plus Shopify, Printify, Printful, Gelato, and Amazon Merch outlet fit.",
-      "Design worker writes art direction, visual guardrails, and product adaptation notes.",
+      `Design worker writes art direction from: ${specifics.visualTreatment}`,
       "Risk worker removes protected marks and flags saturation or event-timing problems.",
       "Manager ships only if fruit score, sales proxy, and visual clarity all stay above threshold.",
     ],
@@ -1187,6 +1346,7 @@ function enrichReviewWithSalesAndDesign(review, salesSignal) {
     imageResults: [...(review.imageResults || [])],
     popularityReasons: [...(review.popularityReasons || [])],
     graphicElements: [...(review.graphicElements || [])],
+    specificResearch: review.specificResearch,
     watchouts: [...(review.watchouts || [])],
   };
 
