@@ -8,6 +8,16 @@ const GOOGLE_TRENDS_RSS_URL = "https://trends.google.com/trending/rss";
 const TREND_LIMIT = Number(process.env.TREND_LIMIT || 12);
 const TREND_GEO = process.env.TREND_GEO || "US";
 const EBAY_MARKETPLACE_ID = process.env.EBAY_MARKETPLACE_ID || "EBAY_US";
+const PUBLIC_SITE_URL =
+  process.env.APP_PUBLIC_URL ||
+  process.env.PUBLIC_SITE_URL ||
+  "https://merch-trend-garden-agent-production.up.railway.app";
+const ETSY_ACTIVE_LISTINGS_URL = "https://openapi.etsy.com/v3/application/listings/active";
+const ETSY_API_KEY =
+  process.env.ETSY_API_KEY ||
+  (process.env.ETSY_KEYSTRING && process.env.ETSY_SHARED_SECRET
+    ? `${process.env.ETSY_KEYSTRING}:${process.env.ETSY_SHARED_SECRET}`
+    : "");
 
 const productCategories = [
   {
@@ -39,6 +49,7 @@ let articleCache = [];
 let cacheFetchedAt = 0;
 let cursor = 0;
 let categoryCursor = 0;
+let latestDesignBrief = null;
 
 function sourceCatalog() {
   return [
@@ -63,11 +74,20 @@ function sourceCatalog() {
     {
       id: "etsy",
       name: "Etsy Open API",
-      status: process.env.ETSY_API_KEY ? "active" : "optional",
-      statusLabel: process.env.ETSY_API_KEY ? "Key found" : "Optional key",
-      signal: "Active listings, tags, shops, listing images, and keyword competition",
-      setup: "Free Etsy developer app, set ETSY_API_KEY. Broad sold-count data is limited.",
+      status: ETSY_API_KEY ? "active" : "optional",
+      statusLabel: ETSY_API_KEY ? "Key found" : "Optional key",
+      signal: "Sales proxy: active listings, tags, images, prices, and favorite-count signals",
+      setup: "Set ETSY_API_KEY. Public endpoints do not expose broad verified sold counts; shop receipts require OAuth.",
       where: "Marketplace",
+    },
+    {
+      id: "figma",
+      name: "Figma design department",
+      status: "plugin-ready",
+      statusLabel: "Plugin ready",
+      signal: "Creates a Figma concept board from the manager direction, sales proxy, design cues, and marketing plan",
+      setup: "Install the generated plugin from /figma-plugin/manifest.json. Optional REST read/export can use FIGMA_ACCESS_TOKEN and FIGMA_FILE_KEY.",
+      where: "Design workflow",
     },
     {
       id: "youtube",
@@ -217,6 +237,207 @@ function decodeXml(value) {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'");
+}
+
+async function fetchWithTimeout(url, options = {}, label = "request") {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs || 15000);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+
+    return response;
+  } catch (error) {
+    const detail = error.cause?.message || error.message;
+    throw new Error(`${label} failed: ${detail}`);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function compactText(value, maxLength = 120) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, maxLength - 1)}...`;
+}
+
+function toSearchTerm(...parts) {
+  return parts
+    .filter(Boolean)
+    .join(" ")
+    .replace(/[^\w\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 90);
+}
+
+function listingPrice(listing) {
+  const price = listing.price;
+
+  if (!price) {
+    return "";
+  }
+
+  if (typeof price === "string") {
+    return price;
+  }
+
+  const amount = Number(price.amount);
+  const divisor = Number(price.divisor || 100);
+  const currency = price.currency_code || price.currency || "USD";
+
+  if (!Number.isFinite(amount) || !Number.isFinite(divisor) || divisor === 0) {
+    return "";
+  }
+
+  return `${currency} ${(amount / divisor).toFixed(2)}`;
+}
+
+function firstListingImage(listing) {
+  const image = listing.images?.[0] || listing.Images?.[0];
+
+  return image?.url_570xN || image?.url_fullxfull || image?.url_75x75 || "";
+}
+
+function topTermsFromListings(listings) {
+  const counts = new Map();
+
+  listings.forEach((listing) => {
+    (listing.tags || []).forEach((tag) => {
+      const normalized = String(tag || "").toLowerCase().trim();
+
+      if (normalized.length > 2) {
+        counts.set(normalized, (counts.get(normalized) || 0) + 1);
+      }
+    });
+  });
+
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([term]) => term);
+}
+
+function publicSalesFallback(query, product) {
+  const keyword = toSearchTerm(query, product);
+
+  return {
+    provider: "etsy",
+    status: ETSY_API_KEY ? "error" : "missing-key",
+    query: keyword,
+    summary: ETSY_API_KEY
+      ? "Etsy sales proxy could not be loaded for this review."
+      : "Set ETSY_API_KEY to let the Sales worker pull Etsy active-listing evidence. Public Etsy data is a market proxy, not verified sold-order volume.",
+    listingCount: 0,
+    averagePrice: "",
+    topTags: [],
+    topListings: [],
+    scoreBoost: 0,
+    sourceLinks: [
+      {
+        label: "Etsy live marketplace search",
+        url: `https://www.etsy.com/search?q=${encodeURIComponent(keyword)}`,
+        type: "sales",
+      },
+      {
+        label: "eBay sold/listing search",
+        url: `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(keyword)}`,
+        type: "sales",
+      },
+    ],
+  };
+}
+
+async function fetchEtsySalesSignal(query, product) {
+  const keyword = toSearchTerm(query, product);
+
+  if (!ETSY_API_KEY) {
+    return publicSalesFallback(query, product);
+  }
+
+  const url = new URL(ETSY_ACTIVE_LISTINGS_URL);
+  url.searchParams.set("keywords", keyword);
+  url.searchParams.set("limit", "8");
+  url.searchParams.set("sort_on", "score");
+  url.searchParams.set("includes", "Images,Shop");
+
+  try {
+    const response = await fetchWithTimeout(
+      url,
+      {
+        headers: {
+          Accept: "application/json",
+          "x-api-key": ETSY_API_KEY,
+          "User-Agent": "MerchTrendReviewAgent/1.0",
+        },
+      },
+      "Etsy Open API",
+    );
+    const payload = await response.json();
+
+    if (!response.ok) {
+      throw new Error(payload.error || payload.message || `HTTP ${response.status}`);
+    }
+
+    const rawListings = payload.results || payload.data || [];
+    const topListings = rawListings.slice(0, 5).map((listing) => ({
+      id: listing.listing_id,
+      title: compactText(listing.title, 92),
+      url: listing.url || `https://www.etsy.com/listing/${listing.listing_id}`,
+      shopName: listing.Shop?.shop_name || listing.shop?.shop_name || "",
+      price: listingPrice(listing),
+      favoriteCount: Number(listing.num_favorers || listing.favorers || 0),
+      image: firstListingImage(listing),
+      tags: (listing.tags || []).slice(0, 8),
+    }));
+    const prices = topListings
+      .map((listing) => Number(String(listing.price).replace(/[^\d.]/g, "")))
+      .filter((price) => Number.isFinite(price) && price > 0);
+    const averagePrice = prices.length
+      ? `USD ${(prices.reduce((sum, price) => sum + price, 0) / prices.length).toFixed(2)}`
+      : "";
+    const favoriteTotal = topListings.reduce((sum, listing) => sum + (listing.favoriteCount || 0), 0);
+    const scoreBoost = Math.min(12, Math.round(topListings.length + Math.min(7, favoriteTotal / 10)));
+    const topTags = topTermsFromListings(rawListings);
+
+    return {
+      provider: "etsy",
+      status: "active",
+      query: keyword,
+      summary: topListings.length
+        ? `Etsy returned ${topListings.length} active listing proxies for "${keyword}"${averagePrice ? ` with average visible price ${averagePrice}` : ""}.`
+        : `Etsy returned no active listing proxies for "${keyword}".`,
+      listingCount: Number(payload.count || rawListings.length || topListings.length),
+      averagePrice,
+      topTags,
+      topListings,
+      scoreBoost,
+      sourceLinks: [
+        {
+          label: "Etsy live marketplace search",
+          url: `https://www.etsy.com/search?q=${encodeURIComponent(keyword)}`,
+          type: "sales",
+        },
+        ...topListings.slice(0, 3).map((listing) => ({
+          label: `Etsy proxy: ${listing.title}`,
+          url: listing.url,
+          type: "sales",
+        })),
+      ],
+    };
+  } catch (error) {
+    console.error(`[etsy] ${error.message}`);
+    const fallback = publicSalesFallback(query, product);
+    fallback.summary = `Etsy sales proxy failed: ${error.message}`;
+    return fallback;
+  }
 }
 
 function reviewTrend(article) {
@@ -414,6 +635,105 @@ function buildDesignerBrief(title, product, popularityReasons, graphicElements) 
   return `Design brief for ${product}: create an original merch concept around "${title}". The reason to test it is ${popularityReasons[0].toLowerCase()} Start with ${graphicElements[0].replace("Primary motif: ", "").toLowerCase()} Keep the design ownable, simple enough for print, and clear without relying on protected marks.`;
 }
 
+function buildDesignPlan(review, salesSignal) {
+  const projectType = /cup|mug|tumbler|drink/i.test(review.product)
+    ? "drinkware"
+    : /shirt|tee|apparel/i.test(review.product)
+      ? "apparel"
+      : "paraphernalia";
+  const salesSummary = salesSignal?.summary || "Sales evidence is waiting for a configured marketplace connector.";
+  const proofLevel =
+    salesSignal?.status === "active" && salesSignal.topListings?.length
+      ? "marketplace proxy found"
+      : "needs marketplace proof";
+  const topVisualCue = review.graphicElements?.[0] || "Create an original symbol system around the trend.";
+  const topReason = review.popularityReasons?.[0] || review.signals?.[0] || "Current demand is moving.";
+  const topTags = salesSignal?.topTags?.length ? salesSignal.topTags.slice(0, 5).join(", ") : "no marketplace tags yet";
+
+  return {
+    title: `Figma concept board: ${review.title}`,
+    projectType,
+    proofLevel,
+    direction: `Create an original ${review.product} concept for "${review.title}" using ${compactText(topVisualCue, 160).toLowerCase()}`,
+    salesSummary,
+    figmaPlugin: {
+      manifestUrl: `${PUBLIC_SITE_URL}/figma-plugin/manifest.json`,
+      codeUrl: `${PUBLIC_SITE_URL}/figma-plugin/code.js`,
+      status: "plugin-ready",
+    },
+    departments: {
+      demand: compactText(topReason, 160),
+      sales: salesSummary,
+      design: compactText(topVisualCue, 160),
+      risk: review.watchouts?.[0] || "Avoid protected names, logos, lyrics, and source artwork.",
+    },
+    palette: ["#00ff66", "#ddffe9", "#c6ff6b", "#07140c", "#ff4f6d"],
+    composition: [
+      projectType === "drinkware"
+        ? "Vertical badge or wraparound repeat that remains readable on a curved surface."
+        : "Center-front composition with one strong focal mark and readable short-form type.",
+      "Two-to-four print colors with one accent color reserved for urgency or proof.",
+      "Thick outline or boxed type treatment so the idea works as a thumbnail and on product mockups.",
+    ],
+    marketingPlan: [
+      `Positioning: ${proofLevel}; lead with the trend mood, not protected names.`,
+      `Audience test: buyers already searching "${review.category}" plus marketplace tags: ${topTags}.`,
+      "Offer ladder: launch one hero tee or mug, then adapt the same visual system to sticker/tote variants if the signal holds.",
+      "Creative test: produce two typography variations and one illustrated-symbol variation before committing production time.",
+    ],
+    rollout: [
+      "Research worker validates demand and current geography.",
+      "Sales worker checks Etsy proxies, price bands, tags, and image patterns.",
+      "Design worker creates the Figma concept board and first layout options.",
+      "Risk worker removes protected marks and flags saturation or event-timing problems.",
+      "Manager ships only if fruit score, sales proxy, and visual clarity all stay above threshold.",
+    ],
+  };
+}
+
+function enrichReviewWithSalesAndDesign(review, salesSignal) {
+  const enriched = {
+    ...review,
+    sourceLinks: [...(review.sourceLinks || [])],
+    imageResults: [...(review.imageResults || [])],
+    popularityReasons: [...(review.popularityReasons || [])],
+    graphicElements: [...(review.graphicElements || [])],
+    watchouts: [...(review.watchouts || [])],
+  };
+
+  enriched.salesSignal = salesSignal;
+  enriched.sourceLinks.push(...(salesSignal.sourceLinks || []));
+
+  (salesSignal.topListings || []).forEach((listing) => {
+    if (listing.image) {
+      enriched.imageResults.push({
+        title: listing.title,
+        url: listing.image,
+        source: "Etsy sales proxy",
+        link: listing.url,
+      });
+    }
+  });
+
+  if (salesSignal.status === "active" && salesSignal.topListings?.length) {
+    enriched.score = Math.min(100, enriched.score + salesSignal.scoreBoost);
+    enriched.popularityReasons.push(
+      `${salesSignal.summary} Treat this as marketplace proof of listing competition and visual direction, not verified sold volume.`,
+    );
+  } else {
+    enriched.watchouts.push(salesSignal.summary);
+  }
+
+  if (salesSignal.topTags?.length) {
+    enriched.graphicElements.push(`Marketplace tag language to consider: ${salesSignal.topTags.slice(0, 6).join(", ")}.`);
+  }
+
+  enriched.designPlan = buildDesignPlan(enriched, salesSignal);
+  enriched.designerBrief = `${enriched.designerBrief} Sales worker: ${salesSignal.summary} Figma worker: use the design-plan plugin to create the concept board and rollout plan.`;
+
+  return enriched;
+}
+
 function pickProduct(products, text) {
   if (text.includes("mug") || text.includes("tumbler") || text.includes("drinkware")) {
     return "drinkware design";
@@ -474,7 +794,15 @@ async function handleReview(request, response) {
     const article = articles[cursor % articles.length];
     cursor += 1;
 
-    const review = reviewTrend(article);
+    const baseReview = reviewTrend(article);
+    const salesSignal = await fetchEtsySalesSignal(baseReview.title, baseReview.product);
+    const review = enrichReviewWithSalesAndDesign(baseReview, salesSignal);
+    latestDesignBrief = {
+      review,
+      salesSignal,
+      designBrief: review.designPlan,
+      updatedAt: new Date().toISOString(),
+    };
 
     sendJson(response, 200, {
       source: article.source === "fallback.local" ? "fallback" : "google-trends",
@@ -490,6 +818,256 @@ async function handleReview(request, response) {
       source: "google-trends",
     });
   }
+}
+
+async function handleSales(request, response) {
+  try {
+    const url = new URL(request.url, `http://${request.headers.host}`);
+    const query = url.searchParams.get("query") || "graphic tee";
+    const product = url.searchParams.get("product") || "merch design";
+    const salesSignal = await fetchEtsySalesSignal(query, product);
+
+    sendJson(response, 200, {
+      ok: true,
+      salesSignal,
+      fetchedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error(`[api/sales] ${error.message}`);
+    sendJson(response, 502, {
+      ok: false,
+      error: error.message,
+    });
+  }
+}
+
+function fallbackDesignBrief() {
+  const review = {
+    category: "T-shirts",
+    product: "graphic tee",
+    title: "Waiting for first trend review",
+    score: 0,
+    popularityReasons: ["Demand worker is waiting for the next trend scan."],
+    graphicElements: ["Design worker will generate the first visual system after a review."],
+    watchouts: ["Connect Etsy and review the first trend before production."],
+  };
+  const salesSignal = publicSalesFallback(review.title, review.product);
+
+  return {
+    review,
+    salesSignal,
+    designBrief: buildDesignPlan(review, salesSignal),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function handleDesignBrief(request, response) {
+  sendJson(response, 200, {
+    ok: true,
+    ...(latestDesignBrief || fallbackDesignBrief()),
+  });
+}
+
+async function handleFigmaStatus(request, response) {
+  const status = {
+    ok: true,
+    plugin: {
+      status: "ready",
+      manifestUrl: `${PUBLIC_SITE_URL}/figma-plugin/manifest.json`,
+      codeUrl: `${PUBLIC_SITE_URL}/figma-plugin/code.js`,
+    },
+    rest: {
+      status: process.env.FIGMA_ACCESS_TOKEN && process.env.FIGMA_FILE_KEY ? "configured" : "optional",
+      setup: "Set FIGMA_ACCESS_TOKEN and FIGMA_FILE_KEY only if you want REST read/export checks. Creating designs is handled by the plugin.",
+    },
+  };
+
+  if (!process.env.FIGMA_ACCESS_TOKEN || !process.env.FIGMA_FILE_KEY) {
+    sendJson(response, 200, status);
+    return;
+  }
+
+  try {
+    const figmaUrl = new URL(`https://api.figma.com/v1/files/${process.env.FIGMA_FILE_KEY}`);
+    figmaUrl.searchParams.set("depth", "1");
+    const figmaResponse = await fetchWithTimeout(
+      figmaUrl,
+      {
+        headers: {
+          Accept: "application/json",
+          "X-Figma-Token": process.env.FIGMA_ACCESS_TOKEN,
+        },
+      },
+      "Figma REST API",
+    );
+    const payload = await figmaResponse.json();
+
+    status.rest.status = figmaResponse.ok ? "configured" : "error";
+    status.rest.fileName = payload.name || "";
+    status.rest.error = figmaResponse.ok ? "" : payload.err || payload.message || `HTTP ${figmaResponse.status}`;
+    sendJson(response, figmaResponse.ok ? 200 : 502, status);
+  } catch (error) {
+    status.rest.status = "error";
+    status.rest.error = error.message;
+    sendJson(response, 502, status);
+  }
+}
+
+function sendText(response, statusCode, payload, contentType = "text/plain; charset=utf-8") {
+  response.writeHead(statusCode, {
+    "Content-Type": contentType,
+    "Cache-Control": "no-store",
+  });
+  response.end(payload);
+}
+
+function getRequestOrigin(request) {
+  const proto = request.headers["x-forwarded-proto"] || "http";
+  const host = request.headers["x-forwarded-host"] || request.headers.host;
+
+  if (host) {
+    return `${proto}://${host}`;
+  }
+
+  return PUBLIC_SITE_URL;
+}
+
+function handleFigmaPluginManifest(request, response) {
+  const origin = getRequestOrigin(request);
+
+  sendText(
+    response,
+    200,
+    JSON.stringify(
+      {
+        name: "Merch Trend Matrix Design Department",
+        id: "merch-trend-matrix-design-department",
+        api: "1.0.0",
+        main: "code.js",
+        editorType: ["figma"],
+        networkAccess: {
+          allowedDomains: [origin, PUBLIC_SITE_URL],
+        },
+      },
+      null,
+      2,
+    ),
+    "application/json; charset=utf-8",
+  );
+}
+
+function figmaPluginCode(apiBaseUrl) {
+  return `
+const API_BASE_URL = ${JSON.stringify(apiBaseUrl)};
+const FONT = { family: "Inter", style: "Regular" };
+const BOLD_FONT = { family: "Inter", style: "Bold" };
+
+function rgb(hex) {
+  const value = hex.replace("#", "");
+  return {
+    r: parseInt(value.slice(0, 2), 16) / 255,
+    g: parseInt(value.slice(2, 4), 16) / 255,
+    b: parseInt(value.slice(4, 6), 16) / 255,
+  };
+}
+
+function paint(hex) {
+  return [{ type: "SOLID", color: rgb(hex) }];
+}
+
+async function addText(parent, text, x, y, width, size, fills, fontName = FONT) {
+  const node = figma.createText();
+  await figma.loadFontAsync(fontName);
+  node.fontName = fontName;
+  node.characters = text || "";
+  node.fontSize = size;
+  node.lineHeight = { unit: "PERCENT", value: 125 };
+  node.resize(width, Math.max(24, size * 1.6));
+  node.x = x;
+  node.y = y;
+  node.fills = fills;
+  parent.appendChild(node);
+  return node;
+}
+
+function addPanel(parent, x, y, width, height, fill, stroke) {
+  const rect = figma.createRectangle();
+  rect.x = x;
+  rect.y = y;
+  rect.resize(width, height);
+  rect.fills = paint(fill);
+  rect.strokes = paint(stroke);
+  rect.strokeWeight = 2;
+  parent.appendChild(rect);
+  return rect;
+}
+
+async function main() {
+  await figma.loadFontAsync(FONT);
+  await figma.loadFontAsync(BOLD_FONT);
+  const response = await fetch(API_BASE_URL + "/api/design-brief");
+  const payload = await response.json();
+  const design = payload.designBrief;
+  const review = payload.review;
+
+  const frame = figma.createFrame();
+  frame.name = "Merch Trend Matrix - " + (review.title || "Design Brief");
+  frame.resize(1440, 1020);
+  frame.fills = paint("#07140c");
+  frame.x = figma.viewport.center.x - 720;
+  frame.y = figma.viewport.center.y - 510;
+
+  await addText(frame, "MERCH TREND MATRIX", 56, 48, 800, 42, paint("#00ff66"), BOLD_FONT);
+  await addText(frame, review.title || "Trend concept", 56, 108, 900, 26, paint("#ddffe9"), BOLD_FONT);
+  await addText(frame, design.direction, 56, 154, 860, 20, paint("#ddffe9"));
+
+  addPanel(frame, 56, 230, 410, 220, "#020403", "#00ff66");
+  await addText(frame, "DEMAND", 82, 258, 300, 20, paint("#c6ff6b"), BOLD_FONT);
+  await addText(frame, design.departments.demand, 82, 300, 330, 18, paint("#ddffe9"));
+
+  addPanel(frame, 514, 230, 410, 220, "#020403", "#00ff66");
+  await addText(frame, "SALES", 540, 258, 300, 20, paint("#c6ff6b"), BOLD_FONT);
+  await addText(frame, design.departments.sales, 540, 300, 330, 18, paint("#ddffe9"));
+
+  addPanel(frame, 972, 230, 410, 220, "#020403", "#00ff66");
+  await addText(frame, "RISK", 998, 258, 300, 20, paint("#c6ff6b"), BOLD_FONT);
+  await addText(frame, design.departments.risk, 998, 300, 330, 18, paint("#ddffe9"));
+
+  addPanel(frame, 56, 500, 630, 300, "#020403", "#28ff8a");
+  await addText(frame, "COMPOSITION", 82, 528, 400, 22, paint("#00ff66"), BOLD_FONT);
+  await addText(frame, design.composition.map((item) => "- " + item).join("\\n"), 82, 578, 540, 18, paint("#ddffe9"));
+
+  addPanel(frame, 744, 500, 638, 300, "#020403", "#28ff8a");
+  await addText(frame, "MARKETING PLAN", 770, 528, 420, 22, paint("#00ff66"), BOLD_FONT);
+  await addText(frame, design.marketingPlan.map((item) => "- " + item).join("\\n"), 770, 578, 540, 18, paint("#ddffe9"));
+
+  await addText(frame, "PRINT PALETTE", 56, 850, 300, 22, paint("#c6ff6b"), BOLD_FONT);
+  design.palette.forEach((hex, index) => {
+    const swatch = figma.createRectangle();
+    swatch.x = 56 + index * 88;
+    swatch.y = 900;
+    swatch.resize(64, 64);
+    swatch.fills = paint(hex);
+    swatch.strokes = paint("#ddffe9");
+    frame.appendChild(swatch);
+  });
+
+  await addText(frame, "ROLLOUT", 590, 850, 260, 22, paint("#c6ff6b"), BOLD_FONT);
+  await addText(frame, design.rollout.map((item, index) => String(index + 1) + ". " + item).join("\\n"), 590, 898, 700, 17, paint("#ddffe9"));
+
+  figma.currentPage.appendChild(frame);
+  figma.viewport.scrollAndZoomIntoView([frame]);
+  figma.closePlugin("Design department board created from the latest trend.");
+}
+
+main().catch((error) => {
+  figma.closePlugin("Figma hookup failed: " + error.message);
+});
+`.trimStart();
+}
+
+function handleFigmaPluginCode(request, response) {
+  sendText(response, 200, figmaPluginCode(getRequestOrigin(request)), "application/javascript; charset=utf-8");
 }
 
 const server = http.createServer((request, response) => {
@@ -510,6 +1088,31 @@ const server = http.createServer((request, response) => {
       ok: true,
       sources: sourceCatalog(),
     });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/sales") {
+    handleSales(request, response);
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/design-brief") {
+    handleDesignBrief(request, response);
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/figma/status") {
+    handleFigmaStatus(request, response);
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/figma-plugin/manifest.json") {
+    handleFigmaPluginManifest(request, response);
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/figma-plugin/code.js") {
+    handleFigmaPluginCode(request, response);
     return;
   }
 

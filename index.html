@@ -107,8 +107,13 @@
             </div>
             <div class="research-room room-design office-object" aria-label="Design research room">
               <span class="room-label">Design</span>
-              <strong id="designRoomStatus">Visual system</strong>
-              <small>Color, type, composition</small>
+              <strong id="designRoomStatus">Figma board</strong>
+              <small>Concept, palette, rollout</small>
+            </div>
+            <div class="research-room room-sales office-object" aria-label="Sales research room">
+              <span class="room-label">Sales</span>
+              <strong id="salesRoomStatus">Etsy proxy</strong>
+              <small>Listings, tags, price bands</small>
             </div>
             <div class="research-room room-risk office-object" aria-label="Risk research room">
               <span class="room-label">Risk</span>
@@ -174,7 +179,12 @@
             <div class="worker worker-design" data-worker="design" aria-label="Design research worker">
               <span class="worker-head"></span>
               <span class="worker-body"></span>
-              <span class="worker-screen">ART</span>
+              <span class="worker-screen">FIG</span>
+            </div>
+            <div class="worker worker-sales" data-worker="sales" aria-label="Sales research worker">
+              <span class="worker-head"></span>
+              <span class="worker-body"></span>
+              <span class="worker-screen">ETSY</span>
             </div>
             <div class="worker worker-risk" data-worker="risk" aria-label="Risk research worker">
               <span class="worker-head"></span>
@@ -248,6 +258,11 @@
                 The agent will scan a top trend, decode the visual opportunity, then post it to
                 the signal board and clickable archive.
               </p>
+            </div>
+
+            <div class="insight-block rollout-block">
+              <h3>AI rollout plan</h3>
+              <ul id="designPlanList"></ul>
             </div>
 
             <div class="insight-columns">

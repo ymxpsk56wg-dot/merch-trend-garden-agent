@@ -35,7 +35,8 @@ Additional easy setup access points are listed by the app at `/api/sources`:
 
 - Google Trends RSS: live now, no key, realtime demand by country.
 - eBay Browse API: optional free developer account/OAuth token; useful for listings, prices, seller locations, and marketplace-specific demand proxies.
-- Etsy Open API: optional free developer app/API key; useful for active listings, tags, shops, and keyword competition. Broad sold-count data is limited.
+- Etsy Open API: optional free developer app key; useful for public active-listing sales proxies such as listing images, tags, prices, and favorite-count signals. Broad verified sold-count data is not exposed through public marketplace search; private shop receipts require OAuth.
+- Figma design department: plugin-ready endpoint that turns the latest trend, Sales signal, design cues, and manager rollout into a Figma concept board.
 - YouTube Data API: optional Google Cloud API key; useful for design-content velocity and niche discovery.
 - GDELT Doc API: no key, but throttle requests; useful for news/media trend coverage and geography hints.
 
@@ -44,8 +45,13 @@ Optional environment variables:
 ```bash
 export EBAY_ACCESS_TOKEN=""
 export EBAY_MARKETPLACE_ID="EBAY_US"
-export ETSY_API_KEY=""
+export ETSY_API_KEY="" # Etsy x-api-key value; or use ETSY_KEYSTRING + ETSY_SHARED_SECRET
+export ETSY_KEYSTRING=""
+export ETSY_SHARED_SECRET=""
 export YOUTUBE_API_KEY=""
+export APP_PUBLIC_URL="https://merch-trend-garden-agent-production.up.railway.app"
+export FIGMA_ACCESS_TOKEN=""
+export FIGMA_FILE_KEY=""
 ```
 
 Check the backend directly:
@@ -54,7 +60,15 @@ Check the backend directly:
 curl http://localhost:4173/api/health
 curl http://localhost:4173/api/sources
 curl http://localhost:4173/api/review
+curl "http://localhost:4173/api/sales?query=graphic%20tee"
+curl http://localhost:4173/api/design-brief
+curl http://localhost:4173/api/figma/status
 ```
+
+Figma plugin files are served from:
+
+- `/figma-plugin/manifest.json`
+- `/figma-plugin/code.js`
 
 ## Deploy online
 

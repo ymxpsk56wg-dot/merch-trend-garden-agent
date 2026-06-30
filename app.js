@@ -49,9 +49,11 @@ const managerReason = document.querySelector("#managerReason");
 const demandRoomStatus = document.querySelector("#demandRoomStatus");
 const marketRoomStatus = document.querySelector("#marketRoomStatus");
 const designRoomStatus = document.querySelector("#designRoomStatus");
+const salesRoomStatus = document.querySelector("#salesRoomStatus");
 const riskRoomStatus = document.querySelector("#riskRoomStatus");
 const workerNodes = document.querySelectorAll("[data-worker]");
 const projectNodes = document.querySelectorAll("[data-project]");
+const designPlanList = document.querySelector("#designPlanList");
 
 function formatClock(date) {
   return new Intl.DateTimeFormat([], {
@@ -172,7 +174,11 @@ function renderManagerGuidance(review, entry) {
 
   demandRoomStatus.textContent = shortText(category, "Demand signal");
   marketRoomStatus.textContent = `${market} proof`;
-  designRoomStatus.textContent = `${review.graphicElements?.length || 0} visual cues`;
+  salesRoomStatus.textContent =
+    review.salesSignal?.status === "active"
+      ? `${review.salesSignal.topListings?.length || 0} Etsy proxies`
+      : "Needs key";
+  designRoomStatus.textContent = review.designPlan?.proofLevel || `${review.graphicElements?.length || 0} visual cues`;
   riskRoomStatus.textContent = `${review.watchouts?.length || 0} watchouts`;
 
   workerNodes.forEach((worker) => {
@@ -214,6 +220,15 @@ function setSourceLinks(list, links) {
     item.append(anchor);
     list.append(item);
   });
+}
+
+function renderDesignPlan(review) {
+  const rollout = review.designPlan?.rollout || [
+    "Run a trend review to generate the manager direction.",
+    "Connect Etsy and Figma to turn the trend into a design board.",
+  ];
+
+  setList(designPlanList, rollout, "No rollout plan was generated yet.");
 }
 
 function renderImageResult(review) {
@@ -289,6 +304,7 @@ function renderReviewEntry(entry) {
   setList(elementList, review.graphicElements, "No graphical elements were inferred yet.");
   setSourceLinks(sourceLinkList, review.sourceLinks);
   setList(watchoutList, review.watchouts, "No obvious watchouts from the trend metadata.");
+  renderDesignPlan(review);
 }
 
 function renderEventLog() {

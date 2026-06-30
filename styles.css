@@ -682,30 +682,37 @@ h3 {
 
 .room-demand {
   left: 4%;
-  top: 8%;
-  width: 21%;
-  height: 28%;
+  top: 7%;
+  width: 20%;
+  height: 24%;
 }
 
 .room-market {
   left: 4%;
-  bottom: 9%;
-  width: 21%;
-  height: 28%;
+  bottom: 7%;
+  width: 20%;
+  height: 24%;
 }
 
 .room-design {
-  left: 29%;
-  top: 8%;
-  width: 21%;
-  height: 28%;
+  left: 28%;
+  top: 7%;
+  width: 20%;
+  height: 33%;
+}
+
+.room-sales {
+  left: 4%;
+  top: 38%;
+  width: 20%;
+  height: 24%;
 }
 
 .room-risk {
-  left: 29%;
-  bottom: 9%;
-  width: 21%;
-  height: 28%;
+  left: 28%;
+  bottom: 7%;
+  width: 20%;
+  height: 33%;
 }
 
 .manager-room {
@@ -1008,22 +1015,27 @@ h3 {
 
 .worker-demand {
   left: 12%;
-  top: 25%;
+  top: 21%;
 }
 
 .worker-market {
-  left: 14%;
-  top: 69%;
+  left: 12%;
+  top: 75%;
 }
 
 .worker-design {
-  left: 37%;
-  top: 25%;
+  left: 36%;
+  top: 27%;
+}
+
+.worker-sales {
+  left: 12%;
+  top: 52%;
 }
 
 .worker-risk {
-  left: 38%;
-  top: 69%;
+  left: 36%;
+  top: 70%;
 }
 
 .manager-worker {
@@ -1319,6 +1331,18 @@ h3 {
   line-height: 1.48;
 }
 
+.rollout-block {
+  grid-column: span 2;
+}
+
+.rollout-block li::before {
+  color: var(--amber);
+  content: "run ";
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.48rem;
+  text-transform: uppercase;
+}
+
 .insight-columns {
   display: grid;
   grid-column: 1 / -1;
@@ -1497,7 +1521,7 @@ li {
     left: 3%;
     top: 5%;
     width: 20%;
-    height: 31%;
+    height: 25%;
   }
 
   .room-design {
@@ -1507,11 +1531,18 @@ li {
     height: 31%;
   }
 
+  .room-sales {
+    left: 3%;
+    top: 36%;
+    width: 20%;
+    height: 25%;
+  }
+
   .room-market {
     left: 3%;
     bottom: 7%;
     width: 20%;
-    height: 31%;
+    height: 25%;
   }
 
   .room-risk {
@@ -1556,7 +1587,7 @@ li {
 
   .worker-demand {
     left: 10%;
-    top: 22%;
+    top: 19%;
   }
 
   .worker-design {
@@ -1564,9 +1595,14 @@ li {
     top: 22%;
   }
 
+  .worker-sales {
+    left: 10%;
+    top: 50%;
+  }
+
   .worker-market {
     left: 10%;
-    top: 67%;
+    top: 74%;
   }
 
   .worker-risk {
