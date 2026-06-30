@@ -825,93 +825,231 @@ function designHash(value) {
 
 function paletteForReview(review) {
   const palettes = [
-    ["#00ff66", "#07140c", "#ddffe9", "#c6ff6b", "#ff4f6d"],
-    ["#62d8ff", "#08131f", "#e9fbff", "#f8d66d", "#ff6b90"],
-    ["#f7f052", "#10120a", "#fffbd1", "#00c2a8", "#ff6b35"],
-    ["#ff6b90", "#18080f", "#ffe6ef", "#6df2c1", "#f7c948"],
+    {
+      name: "vintage athletic",
+      colors: ["#f4ead7", "#151515", "#b83a32", "#d8a847", "#2f5f52"],
+    },
+    {
+      name: "premium outdoor",
+      colors: ["#f8f0db", "#0f241d", "#d56537", "#6f8d5d", "#222222"],
+    },
+    {
+      name: "night market",
+      colors: ["#f7f2e8", "#101827", "#4da3ff", "#f3b23c", "#e45b7f"],
+    },
+    {
+      name: "studio neutral",
+      colors: ["#fbf6ea", "#1d1d1d", "#6b7cff", "#d64f3f", "#6d6a5d"],
+    },
   ];
   return palettes[designHash(review.title) % palettes.length];
 }
 
 function cleanDesignWords(review) {
+  const stopWords = new Set([
+    "the",
+    "and",
+    "for",
+    "with",
+    "from",
+    "this",
+    "that",
+    "into",
+    "after",
+    "before",
+    "world",
+    "official",
+  ]);
   const words = String(review.title || review.category || "trend")
     .replace(/[^a-z0-9\s]/gi, " ")
     .split(/\s+/)
-    .filter((word) => word.length > 2 && !/official|copyright|trademark|brand/i.test(word))
+    .map((word) => word.toLowerCase())
+    .filter((word) => word.length > 2 && !stopWords.has(word) && !/copyright|trademark|brand/i.test(word))
     .slice(0, 5);
 
   return words.length ? words : ["trend", "signal"];
 }
 
+function titleCaseWords(words) {
+  return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1));
+}
+
+function splitDisplayLines(words) {
+  const displayWords = titleCaseWords(words);
+
+  if (displayWords.length <= 1) {
+    return [displayWords[0] || "Trend", "Signal"];
+  }
+
+  if (displayWords.length === 2) {
+    return displayWords;
+  }
+
+  return [displayWords.slice(0, 2).join(" "), displayWords.slice(2, 4).join(" ") || "Edition"];
+}
+
+function fitFontSize(text, baseSize, minSize, maxChars) {
+  const overage = Math.max(0, String(text || "").length - maxChars);
+  return Math.max(minSize, baseSize - overage * 5);
+}
+
+function designMood(review) {
+  const text = `${review.title || ""} ${(review.graphicElements || []).join(" ")}`.toLowerCase();
+
+  if (/\b(team|game|finals|cup|stadium|baseball|basketball|soccer|football|hockey|racing|sports)\b/.test(text)) {
+    return {
+      label: "heritage sport",
+      symbol: "pennant",
+      texture: "halftone",
+    };
+  }
+
+  if (/\b(holiday|season|summer|winter|fall|spring|halloween|christmas|gift)\b/.test(text)) {
+    return {
+      label: "seasonal gift",
+      symbol: "spark",
+      texture: "stamp",
+    };
+  }
+
+  if (/\b(movie|album|tour|festival|concert|celebrity|singer|actor|pop)\b/.test(text)) {
+    return {
+      label: "poster culture",
+      symbol: "spotlight",
+      texture: "grain",
+    };
+  }
+
+  return {
+    label: "modern maker",
+    symbol: "badge",
+    texture: "grain",
+  };
+}
+
+function svgDefs(id, palette) {
+  const [paper, ink, primary, accent, shadow] = palette.colors;
+
+  return `<defs>
+  <filter id="${id}-roughen" x="-10%" y="-10%" width="120%" height="120%">
+    <feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" seed="${designHash(id) % 89}" result="noise"/>
+    <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.8"/>
+  </filter>
+  <pattern id="${id}-dots" width="28" height="28" patternUnits="userSpaceOnUse">
+    <circle cx="4" cy="4" r="2.2" fill="${primary}" opacity=".28"/>
+  </pattern>
+  <linearGradient id="${id}-fade" x1="0" x2="1" y1="0" y2="1">
+    <stop offset="0" stop-color="${paper}" stop-opacity=".18"/>
+    <stop offset="1" stop-color="${accent}" stop-opacity=".06"/>
+  </linearGradient>
+  <symbol id="${id}-pennant" viewBox="0 0 200 150">
+    <path d="M18 26h148l-34 48 34 48H18Z" fill="${primary}"/>
+    <path d="M36 48h82" stroke="${paper}" stroke-width="12" stroke-linecap="square"/>
+    <path d="M36 78h58" stroke="${paper}" stroke-width="12" stroke-linecap="square"/>
+  </symbol>
+  <symbol id="${id}-spark" viewBox="0 0 200 200">
+    <path d="M100 12 123 76 188 100 123 124 100 188 77 124 12 100 77 76Z" fill="${primary}"/>
+    <circle cx="100" cy="100" r="26" fill="${accent}"/>
+  </symbol>
+  <symbol id="${id}-spotlight" viewBox="0 0 200 200">
+    <path d="M44 172 100 20l56 152Z" fill="${primary}"/>
+    <circle cx="100" cy="84" r="38" fill="${paper}" opacity=".86"/>
+  </symbol>
+  <symbol id="${id}-badge" viewBox="0 0 200 200">
+    <path d="M100 16 170 52v80l-70 52-70-52V52Z" fill="${primary}"/>
+    <circle cx="100" cy="98" r="44" fill="${paper}" opacity=".9"/>
+  </symbol>
+</defs>`;
+}
+
 function buildDesignSvg(review, variant, index) {
-  const [primary, background, ink, accent, hot] = paletteForReview(review);
+  const palette = paletteForReview(review);
+  const [paper, ink, primary, accent, shadow] = palette.colors;
   const words = cleanDesignWords(review);
-  const headline = escapeSvg(words.slice(0, 2).join(" ").toUpperCase());
-  const subline = escapeSvg((review.product || "merch").toUpperCase());
+  const [lineA, lineB] = splitDisplayLines(words);
+  const headline = escapeSvg(lineA.toUpperCase());
+  const secondary = escapeSvg(lineB.toUpperCase());
+  const subline = escapeSvg(`${review.product || "merch"} concept`.toUpperCase());
   const cue = escapeSvg((review.graphicElements?.[0] || "Original symbol system").replace(/^Primary motif:\s*/i, ""));
-  const offset = (designHash(`${review.title}-${variant}`) % 80) - 40;
+  const mood = designMood(review);
+  const id = `design-${variant}-${designHash(`${review.title}-${variant}`).toString(36)}`;
+  const symbol = `${id}-${mood.symbol}`;
+  const badgeText = escapeSvg(mood.label.toUpperCase());
+  const badgeHeadlineSize = fitFontSize(lineA, 116, 72, 12);
+  const badgeSecondarySize = fitFontSize(lineB, 88, 58, 12);
+  const editorialHeadlineSize = fitFontSize(lineA, 132, 76, 10);
+  const editorialSecondarySize = fitFontSize(lineB, 118, 70, 10);
+  const markHeadlineSize = fitFontSize(lineA, 112, 72, 12);
+  const markSecondarySize = fitFontSize(lineB, 82, 56, 12);
 
   if (variant === "badge") {
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1080" role="img" aria-label="${headline} badge design">
-  <rect width="900" height="1080" fill="${background}"/>
-  <circle cx="450" cy="420" r="300" fill="none" stroke="${primary}" stroke-width="26"/>
-  <circle cx="450" cy="420" r="226" fill="${primary}" opacity=".15" stroke="${accent}" stroke-width="10"/>
-  <path d="M292 420c70-142 246-142 316 0-70 142-246 142-316 0Z" fill="${ink}" opacity=".94"/>
-  <circle cx="450" cy="420" r="72" fill="${hot}"/>
-  <path d="M450 205v430M235 420h430" stroke="${background}" stroke-width="22" stroke-linecap="round" opacity=".78"/>
-  <text x="450" y="820" text-anchor="middle" fill="${ink}" font-family="Arial Black, Impact, sans-serif" font-size="76" font-weight="900">${headline}</text>
-  <text x="450" y="895" text-anchor="middle" fill="${accent}" font-family="Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="8">${subline}</text>
-  <text x="450" y="968" text-anchor="middle" fill="${primary}" font-family="Arial, sans-serif" font-size="24">${cue.slice(0, 64)}</text>
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1500" role="img" aria-label="${headline} premium badge design">
+  ${svgDefs(id, palette)}
+  <rect width="1200" height="1500" fill="${paper}"/>
+  <rect x="58" y="58" width="1084" height="1384" fill="url(#${id}-fade)" stroke="${ink}" stroke-width="10"/>
+  <rect x="96" y="96" width="1008" height="1308" fill="none" stroke="${primary}" stroke-width="5" stroke-dasharray="28 22" opacity=".8"/>
+  <circle cx="600" cy="560" r="370" fill="${ink}"/>
+  <circle cx="600" cy="560" r="320" fill="${paper}" stroke="${primary}" stroke-width="22"/>
+  <circle cx="600" cy="560" r="250" fill="url(#${id}-dots)" stroke="${ink}" stroke-width="12"/>
+  <use href="#${symbol}" x="430" y="374" width="340" height="340" filter="url(#${id}-roughen)"/>
+  <path d="M230 930h740" stroke="${ink}" stroke-width="20"/>
+  <path d="M290 984h620" stroke="${primary}" stroke-width="8"/>
+  <text x="600" y="1068" text-anchor="middle" fill="${ink}" font-family="Arial Black, Impact, sans-serif" font-size="${badgeHeadlineSize}" font-weight="900" letter-spacing="-2">${headline}</text>
+  <text x="600" y="1172" text-anchor="middle" fill="${primary}" font-family="Arial Black, Impact, sans-serif" font-size="${badgeSecondarySize}" font-weight="900">${secondary}</text>
+  <text x="600" y="1264" text-anchor="middle" fill="${shadow}" font-family="Arial, sans-serif" font-size="34" font-weight="800" letter-spacing="10">${subline}</text>
+  <text x="600" y="1352" text-anchor="middle" fill="${ink}" font-family="Arial, sans-serif" font-size="28" opacity=".72">${badgeText} / LIMITED TEST</text>
 </svg>`;
   }
 
   if (variant === "type") {
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1080" role="img" aria-label="${headline} typography design">
-  <rect width="900" height="1080" fill="${background}"/>
-  <g transform="translate(${offset} 0)">
-    <rect x="120" y="164" width="660" height="660" rx="0" fill="none" stroke="${primary}" stroke-width="18"/>
-    <path d="M140 250h620M140 742h620" stroke="${accent}" stroke-width="10" stroke-dasharray="28 18"/>
-    <text x="450" y="430" text-anchor="middle" fill="${ink}" font-family="Arial Black, Impact, sans-serif" font-size="104" font-weight="900">${headline}</text>
-    <text x="450" y="536" text-anchor="middle" fill="${primary}" font-family="Arial Black, Impact, sans-serif" font-size="86" font-weight="900">${escapeSvg(words.slice(2, 4).join(" ").toUpperCase() || "DROP")}</text>
-    <text x="450" y="650" text-anchor="middle" fill="${hot}" font-family="Arial, sans-serif" font-size="36" font-weight="800" letter-spacing="12">${subline}</text>
-    <circle cx="184" cy="190" r="34" fill="${hot}"/>
-    <circle cx="716" cy="798" r="34" fill="${accent}"/>
-  </g>
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1500" role="img" aria-label="${headline} editorial typography design">
+  ${svgDefs(id, palette)}
+  <rect width="1200" height="1500" fill="${ink}"/>
+  <rect x="86" y="86" width="1028" height="1328" fill="${paper}"/>
+  <path d="M96 272h1008M96 1228h1008" stroke="${primary}" stroke-width="26"/>
+  <path d="M210 356h780v514H210Z" fill="${ink}"/>
+  <path d="M250 392h700v438H250Z" fill="none" stroke="${paper}" stroke-width="8"/>
+  <text x="600" y="560" text-anchor="middle" fill="${paper}" font-family="Arial Black, Impact, sans-serif" font-size="${editorialHeadlineSize}" font-weight="900" letter-spacing="-4">${headline}</text>
+  <text x="600" y="704" text-anchor="middle" fill="${primary}" font-family="Arial Black, Impact, sans-serif" font-size="${editorialSecondarySize}" font-weight="900" letter-spacing="-3">${secondary}</text>
+  <text x="600" y="804" text-anchor="middle" fill="${accent}" font-family="Arial, sans-serif" font-size="32" font-weight="900" letter-spacing="12">${badgeText}</text>
+  <use href="#${symbol}" x="72" y="974" width="170" height="170"/>
+  <use href="#${symbol}" x="958" y="974" width="170" height="170"/>
+  <text x="600" y="1076" text-anchor="middle" fill="${ink}" font-family="Arial, sans-serif" font-size="34" font-weight="800">${subline}</text>
+  <text x="600" y="1160" text-anchor="middle" fill="${shadow}" font-family="Arial, sans-serif" font-size="26" opacity=".74">${cue.slice(0, 78)}</text>
 </svg>`;
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1080" role="img" aria-label="${headline} repeat pattern design">
-  <rect width="900" height="1080" fill="${background}"/>
-  <defs>
-    <g id="spark">
-      <path d="M0-42 12-10 44 0 12 10 0 42-12 10-44 0-12-10Z" fill="${primary}"/>
-      <circle r="12" fill="${hot}"/>
-    </g>
-  </defs>
-  <g opacity=".95">
-    <use href="#spark" x="210" y="230"/>
-    <use href="#spark" x="690" y="270" transform="scale(.74)"/>
-    <use href="#spark" x="248" y="740" transform="scale(.62)"/>
-    <use href="#spark" x="660" y="805" transform="scale(.9)"/>
-  </g>
-  <path d="M180 515c102-170 438-170 540 0-102 170-438 170-540 0Z" fill="${primary}" opacity=".16" stroke="${accent}" stroke-width="14"/>
-  <text x="450" y="500" text-anchor="middle" fill="${ink}" font-family="Arial Black, Impact, sans-serif" font-size="88" font-weight="900">${headline}</text>
-  <text x="450" y="590" text-anchor="middle" fill="${primary}" font-family="Arial, sans-serif" font-size="34" font-weight="800" letter-spacing="10">${subline}</text>
-  <path d="M236 646h428" stroke="${hot}" stroke-width="16" stroke-linecap="square"/>
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1500" role="img" aria-label="${headline} illustrated merch system design">
+  ${svgDefs(id, palette)}
+  <rect width="1200" height="1500" fill="${paper}"/>
+  <rect width="1200" height="1500" fill="url(#${id}-dots)" opacity=".65"/>
+  <path d="M260 200h680l90 175-90 175H260l-90-175Z" fill="${ink}" filter="url(#${id}-roughen)"/>
+  <path d="M318 250h564l62 125-62 125H318l-62-125Z" fill="${paper}" stroke="${primary}" stroke-width="18"/>
+  <use href="#${symbol}" x="462" y="260" width="276" height="276"/>
+  <path d="M188 730c108-76 214-114 318-114 120 0 188 62 294 62 78 0 148-28 212-84" fill="none" stroke="${primary}" stroke-width="22" stroke-linecap="round"/>
+  <path d="M188 800c108-76 214-114 318-114 120 0 188 62 294 62 78 0 148-28 212-84" fill="none" stroke="${accent}" stroke-width="14" stroke-linecap="round"/>
+  <text x="600" y="960" text-anchor="middle" fill="${ink}" font-family="Arial Black, Impact, sans-serif" font-size="${markHeadlineSize}" font-weight="900" letter-spacing="-2">${headline}</text>
+  <text x="600" y="1062" text-anchor="middle" fill="${primary}" font-family="Arial Black, Impact, sans-serif" font-size="${markSecondarySize}" font-weight="900">${secondary}</text>
+  <rect x="298" y="1138" width="604" height="82" fill="${ink}"/>
+  <text x="600" y="1193" text-anchor="middle" fill="${paper}" font-family="Arial, sans-serif" font-size="30" font-weight="900" letter-spacing="8">${subline}</text>
+  <circle cx="210" cy="1178" r="34" fill="${accent}"/>
+  <circle cx="990" cy="1178" r="34" fill="${primary}"/>
+  <text x="600" y="1302" text-anchor="middle" fill="${shadow}" font-family="Arial, sans-serif" font-size="27">${cue.slice(0, 82)}</text>
 </svg>`;
 }
 
 function buildInAppDesignStudio(review, salesSignal) {
   const variants = [
-    ["badge", "Hero badge"],
-    ["type", "Typography lockup"],
-    ["pattern", "Icon repeat"],
+    ["badge", "Retail badge system"],
+    ["type", "Editorial type lockup"],
+    ["pattern", "Illustrated merch mark"],
   ].map(([variant, title], index) => ({
     id: `${variant}-${designHash(`${review.title}-${variant}`).toString(36)}`,
     title,
     product: review.product,
-    format: /drink|mug|tumbler/i.test(review.product) ? "drinkware-ready SVG" : "apparel-ready SVG",
+    format: /drink|mug|tumbler/i.test(review.product) ? "premium drinkware SVG" : "premium apparel SVG",
     rationale: [
+      `${title} built with ${paletteForReview(review).name} palette, merch-safe typography, and an original ${designMood(review).label} symbol system.`,
       review.graphicElements?.[index] || review.graphicElements?.[0] || "Original visual system from the trend brief.",
       salesSignal?.topTags?.length
         ? `Tag language considered: ${salesSignal.topTags.slice(0, 4).join(", ")}.`
