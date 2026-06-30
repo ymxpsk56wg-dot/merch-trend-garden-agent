@@ -55,6 +55,7 @@ let cacheFetchedAt = 0;
 let cursor = 0;
 let categoryCursor = 0;
 let latestDesignBrief = null;
+let latestDesignOrder = null;
 
 function normalizedFigmaFileKey(value = process.env.FIGMA_FILE_KEY || "") {
   const text = String(value || "").trim();
@@ -508,7 +509,7 @@ function figmaConnectionStatus() {
         ]
       : [
           "Install the hosted Figma plugin from the manifest URL.",
-          "Run the plugin inside Figma; it fetches /api/design-brief and creates the editable concept board in your account.",
+          "Run the plugin inside Figma; it consumes queued /api/design-order work or falls back to /api/design-brief.",
           "Optional: add FIGMA_ACCESS_TOKEN and FIGMA_FILE_KEY for REST status checks.",
         ],
   };
@@ -1087,10 +1088,90 @@ function fallbackDesignBrief() {
   };
 }
 
+function currentDesignPackage() {
+  return latestDesignBrief || fallbackDesignBrief();
+}
+
+function createDesignOrder(payload = {}) {
+  const designPackage = currentDesignPackage();
+  const id = `figma-${Date.now().toString(36)}`;
+
+  latestDesignOrder = {
+    id,
+    status: "queued",
+    createdAt: new Date().toISOString(),
+    completedAt: "",
+    note: payload.note || "Create editable Figma concept board from the current manager brief.",
+    pluginManifestUrl: `${PUBLIC_SITE_URL}/figma-plugin/manifest.json`,
+    pluginCodeUrl: `${PUBLIC_SITE_URL}/figma-plugin/code.js`,
+    ...designPackage,
+  };
+
+  return latestDesignOrder;
+}
+
 function handleDesignBrief(request, response) {
   sendJson(response, 200, {
     ok: true,
-    ...(latestDesignBrief || fallbackDesignBrief()),
+    ...currentDesignPackage(),
+    designOrder: latestDesignOrder,
+  });
+}
+
+function handleDesignOrder(request, response) {
+  if (request.method === "POST") {
+    const order = createDesignOrder();
+    sendJson(response, 201, {
+      ok: true,
+      order,
+      figmaConnection: figmaConnectionStatus(),
+    });
+    return;
+  }
+
+  sendJson(response, 200, {
+    ok: true,
+    order: latestDesignOrder,
+    figmaConnection: figmaConnectionStatus(),
+  });
+}
+
+function handleDesignOrderComplete(request, response) {
+  let body = "";
+
+  request.on("data", (chunk) => {
+    body += chunk;
+  });
+
+  request.on("end", () => {
+    let payload = {};
+
+    try {
+      payload = body ? JSON.parse(body) : {};
+    } catch {
+      payload = {};
+    }
+
+    if (!latestDesignOrder || (payload.id && payload.id !== latestDesignOrder.id)) {
+      sendJson(response, 404, {
+        ok: false,
+        error: "No matching design order is queued.",
+      });
+      return;
+    }
+
+    latestDesignOrder = {
+      ...latestDesignOrder,
+      status: "completed",
+      completedAt: new Date().toISOString(),
+      completedBy: "figma-plugin",
+      figmaFrameName: payload.frameName || latestDesignOrder.figmaFrameName || "",
+    };
+
+    sendJson(response, 200, {
+      ok: true,
+      order: latestDesignOrder,
+    });
   });
 }
 
@@ -1233,13 +1314,15 @@ function addPanel(parent, x, y, width, height, fill, stroke) {
 async function main() {
   await figma.loadFontAsync(FONT);
   await figma.loadFontAsync(BOLD_FONT);
-  const response = await fetch(API_BASE_URL + "/api/design-brief");
-  const payload = await response.json();
+  const orderResponse = await fetch(API_BASE_URL + "/api/design-order");
+  const orderPayload = await orderResponse.json();
+  const order = orderPayload.order && orderPayload.order.status === "queued" ? orderPayload.order : null;
+  const payload = order || (await fetch(API_BASE_URL + "/api/design-brief").then((response) => response.json()));
   const design = payload.designBrief;
   const review = payload.review;
 
   const frame = figma.createFrame();
-  frame.name = "Merch Trend Matrix - " + (review.title || "Design Brief");
+  frame.name = (order ? "Ordered Design " + order.id + " - " : "Merch Trend Matrix - ") + (review.title || "Design Brief");
   frame.resize(1440, 1100);
   frame.fills = paint("#07140c");
   frame.x = figma.viewport.center.x - 720;
@@ -1288,7 +1371,16 @@ async function main() {
 
   figma.currentPage.appendChild(frame);
   figma.viewport.scrollAndZoomIntoView([frame]);
-  figma.closePlugin("Design department board created from the latest trend.");
+
+  if (order) {
+    await fetch(API_BASE_URL + "/api/design-order/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: order.id, frameName: frame.name }),
+    });
+  }
+
+  figma.closePlugin(order ? "Queued design order completed in Figma." : "Design department board created from the latest trend.");
 }
 
 main().catch((error) => {
@@ -1337,6 +1429,16 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  if ((request.method === "GET" || request.method === "POST") && url.pathname === "/api/design-order") {
+    handleDesignOrder(request, response);
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/design-order/complete") {
+    handleDesignOrderComplete(request, response);
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/figma/status") {
     handleFigmaStatus(request, response);
     return;
@@ -1362,7 +1464,7 @@ const server = http.createServer((request, response) => {
     return;
   }
 
-  response.writeHead(405, { Allow: "GET" });
+  response.writeHead(405, { Allow: "GET, POST" });
   response.end("Method not allowed");
 });
 

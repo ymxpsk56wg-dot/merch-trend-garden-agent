@@ -8,6 +8,7 @@ const state = {
   lastReview: null,
   history: [],
   selectedHistoryId: null,
+  designOrder: null,
   countdownTimerId: null,
   missionTimerIds: [],
   managerFeed: [],
@@ -38,6 +39,8 @@ const managerRecommendationList = document.querySelector("#managerRecommendation
 const sourceLinkList = document.querySelector("#sourceLinkList");
 const watchoutList = document.querySelector("#watchoutList");
 const reviewNowButton = document.querySelector("#reviewNowButton");
+const orderDesignButton = document.querySelector("#orderDesignButton");
+const designOrderStatus = document.querySelector("#designOrderStatus");
 const reviewCount = document.querySelector("#reviewCount");
 const nextRun = document.querySelector("#nextRun");
 const countdownValue = document.querySelector("#countdownValue");
@@ -298,6 +301,18 @@ function marketingPlan(review) {
 function renderFigmaConnection(review) {
   const connection = review.figmaConnection || review.designPlan?.figmaConnection;
   const items = [];
+  const order = state.designOrder;
+
+  if (order) {
+    items.push({
+      label:
+        order.status === "completed"
+          ? `Design order completed in Figma: ${order.figmaFrameName || order.id}`
+          : `Design order queued: run the hosted plugin in Figma to create ${order.review?.product || "the board"}`,
+      url: order.pluginManifestUrl || connection?.pluginManifestUrl || "/figma-plugin/manifest.json",
+      type: "figma",
+    });
+  }
 
   if (connection?.pluginManifestUrl) {
     items.push({
@@ -328,6 +343,29 @@ function renderFigmaConnection(review) {
     url: "/figma-plugin/manifest.json",
     type: "figma",
   }]);
+}
+
+function renderDesignOrder(order) {
+  state.designOrder = order || null;
+
+  if (!designOrderStatus) {
+    return;
+  }
+
+  if (!order) {
+    designOrderStatus.textContent = "No design order queued.";
+    return;
+  }
+
+  const created = order.createdAt ? formatClock(new Date(order.createdAt)) : "now";
+  designOrderStatus.textContent =
+    order.status === "completed"
+      ? `Completed in Figma: ${order.figmaFrameName || order.id}`
+      : `Queued ${created}: run the hosted Figma plugin.`;
+
+  if (state.lastReview) {
+    renderFigmaConnection(state.lastReview);
+  }
 }
 
 function renderSalesOutlets(review) {
@@ -549,6 +587,60 @@ async function fetchReview(trigger) {
   return payload;
 }
 
+async function fetchDesignOrder() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/design-order`, {
+      headers: { Accept: "application/json" },
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    const payload = await response.json();
+    renderDesignOrder(payload.order || null);
+  } catch {
+    renderDesignOrder(null);
+  }
+}
+
+async function orderFigmaDesign() {
+  if (state.loading || orderDesignButton?.disabled) {
+    return;
+  }
+
+  orderDesignButton.disabled = true;
+  setAgentStatus("design", "working", "Queuing Figma order");
+  agentTask.textContent = "Design agent sending order to Figma queue";
+  addManagerFeed("Design order sent to the Figma queue.");
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/design-order`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ source: "designer-agent" }),
+    });
+    const payload = await response.json();
+
+    if (!response.ok) {
+      throw new Error(payload.error || "Design order failed.");
+    }
+
+    renderDesignOrder(payload.order);
+    setAgentStatus("design", "done", "Figma order queued");
+    addManagerFeed("Designer agent is waiting for the hosted Figma plugin to run.");
+  } catch (error) {
+    setAgentStatus("design", "idle", agents.design.idle);
+    designOrderStatus.textContent = error.message;
+    addManagerFeed(`Design order failed: ${error.message}`);
+  } finally {
+    orderDesignButton.disabled = false;
+  }
+}
+
 async function runAgentPhase(agentKey, reportText, duration = 450) {
   const agent = agents[agentKey];
   setAgentStatus(agentKey, "working", agent?.active || "Working");
@@ -628,6 +720,10 @@ reviewNowButton.addEventListener("click", () => {
   runReview("manual");
 });
 
+orderDesignButton?.addEventListener("click", () => {
+  orderFigmaDesign();
+});
+
 eventLog.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-review-id]");
 
@@ -653,4 +749,5 @@ state.countdownTimerId = window.setInterval(renderCountdown, 1000);
 setAllAgents("idle");
 renderCountdown();
 loadApiSources();
+fetchDesignOrder();
 runReview("initial");
