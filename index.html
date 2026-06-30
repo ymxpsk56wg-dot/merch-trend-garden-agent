@@ -31,6 +31,9 @@
         <button class="primary-button" id="reviewNowButton" type="button">
           Run full agent cycle
         </button>
+        <button class="secondary-button" id="printReportButton" type="button" disabled>
+          Print research PDF
+        </button>
 
         <dl class="run-stats">
           <div>
@@ -135,12 +138,10 @@
                 <span class="agent-avatar" aria-hidden="true"></span>
                 <div>
                   <span class="agent-role">Design agent</span>
-                  <strong id="designRoomStatus">Preparing in-app concepts</strong>
+                  <strong id="designRoomStatus">Preparing design direction</strong>
                 </div>
               </div>
               <p id="designReport">No design direction yet.</p>
-              <button id="generateDesignButton" class="agent-action" type="button">Generate designs</button>
-              <small id="designStudioStatus" class="agent-note">No concepts generated yet.</small>
             </article>
 
             <article class="agent-card" data-agent="marketing">
@@ -217,11 +218,6 @@
             <ul id="marketingPlanList"></ul>
           </section>
 
-          <section class="report-panel design-studio-panel">
-            <h3>Generated designs</h3>
-            <div id="designConceptGrid" class="design-concept-grid"></div>
-          </section>
-
           <section class="report-panel">
             <h3>Sales outlets</h3>
             <ul id="salesOutletList" class="source-link-list"></ul>
@@ -249,6 +245,7 @@
         </section>
       </section>
     </main>
+    <section id="printReport" class="print-report" aria-hidden="true"></section>
 
     <script src="./app.js"></script>
   </body>

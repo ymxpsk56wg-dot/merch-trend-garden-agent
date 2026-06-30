@@ -8,7 +8,6 @@ const state = {
   lastReview: null,
   history: [],
   selectedHistoryId: null,
-  designStudio: null,
   countdownTimerId: null,
   missionTimerIds: [],
   managerFeed: [],
@@ -33,14 +32,13 @@ const summaryText = document.querySelector("#summaryText");
 const reasonList = document.querySelector("#reasonList");
 const elementList = document.querySelector("#elementList");
 const marketingPlanList = document.querySelector("#marketingPlanList");
-const designConceptGrid = document.querySelector("#designConceptGrid");
 const salesOutletList = document.querySelector("#salesOutletList");
 const managerRecommendationList = document.querySelector("#managerRecommendationList");
 const sourceLinkList = document.querySelector("#sourceLinkList");
 const watchoutList = document.querySelector("#watchoutList");
 const reviewNowButton = document.querySelector("#reviewNowButton");
-const generateDesignButton = document.querySelector("#generateDesignButton");
-const designStudioStatus = document.querySelector("#designStudioStatus");
+const printReportButton = document.querySelector("#printReportButton");
+const printReport = document.querySelector("#printReport");
 const reviewCount = document.querySelector("#reviewCount");
 const nextRun = document.querySelector("#nextRun");
 const countdownValue = document.querySelector("#countdownValue");
@@ -83,8 +81,8 @@ const agents = {
   },
   design: {
     label: "Design agent",
-    active: "Generating in-app concepts",
-    idle: "Preparing in-app concepts",
+    active: "Writing design direction",
+    idle: "Preparing design direction",
   },
   marketing: {
     label: "Marketing agent",
@@ -298,45 +296,6 @@ function marketingPlan(review) {
   ];
 }
 
-function renderDesignStudio(designStudio) {
-  state.designStudio = designStudio || null;
-
-  if (!designConceptGrid || !designStudioStatus) {
-    return;
-  }
-
-  designConceptGrid.replaceChildren();
-
-  if (!designStudio?.variants?.length) {
-    designStudioStatus.textContent = "No concepts generated yet.";
-    const empty = document.createElement("p");
-    empty.className = "empty-state";
-    empty.textContent = "Run a cycle or generate designs to create in-app SVG concepts.";
-    designConceptGrid.append(empty);
-    return;
-  }
-
-  designStudioStatus.textContent = `${designStudio.variants.length} concepts generated in-app.`;
-
-  designStudio.variants.forEach((variant) => {
-    const card = document.createElement("article");
-    const image = document.createElement("img");
-    const title = document.createElement("strong");
-    const meta = document.createElement("span");
-    const reason = document.createElement("p");
-
-    card.className = "design-concept-card";
-    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(variant.svg)}`;
-    image.alt = variant.title;
-    title.textContent = variant.title;
-    meta.textContent = variant.format || "SVG concept";
-    reason.textContent = variant.rationale?.[0] || designStudio.brief || "Original in-app concept.";
-
-    card.append(image, title, meta, reason);
-    designConceptGrid.append(card);
-  });
-}
-
 function renderSalesOutlets(review) {
   const outlets = review.salesOutlets || review.designPlan?.salesOutlets || [];
   const links = outlets.map((outlet) => ({
@@ -369,14 +328,14 @@ function renderAgentReports(review, entry) {
       : "Needs Etsy key";
   designRoomStatus.textContent =
     review.agentRuntime?.status === "active"
-      ? "AI design report"
+      ? "AI design direction"
       : review.designPlan?.proofLevel || `${review.graphicElements?.length || 0} visual cues`;
   marketingRoomStatus.textContent = `${marketingPlan(review).length} launch actions`;
   riskRoomStatus.textContent = `${review.watchouts?.length || 0} watchouts`;
 
   demandReport.textContent = demandLine;
   salesReport.textContent = salesLine;
-  designReport.textContent = `${designLine} Designs render inside the app as original SVG concepts.`;
+  designReport.textContent = designLine;
   marketingReport.textContent = marketingLine;
   marketReport.textContent = `${marketLine} ${outletCount} sales outlets are available for routing.`;
   riskReport.textContent = riskLine;
@@ -417,6 +376,82 @@ function createHistoryEntry(payload) {
   };
 }
 
+function reportList(title, items, fallback) {
+  const values = items?.length ? items : [fallback];
+  return `
+    <section>
+      <h2>${title}</h2>
+      <ul>${values.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+    </section>
+  `;
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function sourceLinkRows(links = []) {
+  return links.slice(0, 10).map((link) => {
+    const label = escapeHtml(link.label || "Research link");
+    const url = escapeHtml(link.url || "#");
+    return `<li><strong>${label}</strong><br /><span>${url}</span></li>`;
+  }).join("");
+}
+
+function buildPrintReport(entry) {
+  if (!printReport || !entry?.review) {
+    return;
+  }
+
+  const review = entry.review;
+  const fruitScore = getFruitScore(review);
+  const generatedAt = new Date(entry.createdAt).toLocaleString();
+
+  printReport.innerHTML = `
+    <article>
+      <header>
+        <p>Merch Design Research Report</p>
+        <h1>${escapeHtml(review.title)}</h1>
+        <dl>
+          <div><dt>Product</dt><dd>${escapeHtml(review.product || "Merch design")}</dd></div>
+          <div><dt>Category</dt><dd>${escapeHtml(review.category || entry.query || "Trend")}</dd></div>
+          <div><dt>Market</dt><dd>${escapeHtml(review.market || entry.market || "US")}</dd></div>
+          <div><dt>Fruit score</dt><dd>${fruitScore}/100</dd></div>
+          <div><dt>Commercial fit</dt><dd>${escapeHtml(`${review.suitability?.score ?? "--"}/14`)}</dd></div>
+          <div><dt>Generated</dt><dd>${escapeHtml(generatedAt)}</dd></div>
+        </dl>
+      </header>
+      <section>
+        <h2>Manager Summary</h2>
+        <p>${escapeHtml(review.aiReports?.manager || review.summary || review.designerBrief)}</p>
+      </section>
+      ${reportList("Why It Is Popular", review.popularityReasons || review.signals, "No popularity reasoning found.")}
+      ${reportList("Design Direction", review.graphicElements, "No design direction found.")}
+      ${reportList("Marketing Rollout", marketingPlan(review), "No marketing rollout found.")}
+      ${reportList("Watchouts", review.watchouts, "No watchouts found.")}
+      <section>
+        <h2>Research Links</h2>
+        <ul>${sourceLinkRows(review.sourceLinks) || "<li>No source links available.</li>"}</ul>
+      </section>
+    </article>
+  `;
+}
+
+function printCurrentReport() {
+  const entry = state.history.find((historyEntry) => historyEntry.id === state.selectedHistoryId) || state.history[0];
+
+  if (!entry) {
+    return;
+  }
+
+  buildPrintReport(entry);
+  window.print();
+}
+
 function renderReview(payload) {
   const entry = createHistoryEntry(payload);
 
@@ -428,6 +463,7 @@ function renderReview(payload) {
 
   state.reviewed = state.history.length;
   state.selectedHistoryId = entry.id;
+  printReportButton.disabled = false;
   renderReviewEntry(entry);
   renderEventLog();
 }
@@ -452,7 +488,6 @@ function renderReviewEntry(entry) {
   setList(reasonList, review.popularityReasons || review.signals, "No popularity reasoning found in the trend metadata.");
   setList(elementList, review.graphicElements, "No graphical elements were inferred yet.");
   setList(marketingPlanList, marketingPlan(review), "No marketing plan generated yet.");
-  renderDesignStudio(review.designStudio || state.designStudio);
   renderSalesOutlets(review);
   setList(managerRecommendationList, review.workplaceRecommendations, "No manager workplace updates generated yet.");
   setList(designPlanList, review.designPlan?.rollout, "No production rollout generated yet.");
@@ -560,60 +595,6 @@ async function fetchReview(trigger) {
   return payload;
 }
 
-async function fetchDesigns() {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/designs`, {
-      headers: { Accept: "application/json" },
-    });
-
-    if (!response.ok) {
-      return;
-    }
-
-    const payload = await response.json();
-    renderDesignStudio(payload.designStudio || null);
-  } catch {
-    renderDesignStudio(null);
-  }
-}
-
-async function generateInAppDesigns() {
-  if (state.loading || generateDesignButton?.disabled) {
-    return;
-  }
-
-  generateDesignButton.disabled = true;
-  setAgentStatus("design", "working", "Generating concepts");
-  agentTask.textContent = "Design agent generating in-app concepts";
-  addManagerFeed("Design agent started in-app concept generation.");
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/designs`, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ source: "designer-agent" }),
-    });
-    const payload = await response.json();
-
-    if (!response.ok) {
-      throw new Error(payload.error || "Design generation failed.");
-    }
-
-    renderDesignStudio(payload.designStudio);
-    setAgentStatus("design", "done", "Concepts generated");
-    addManagerFeed("Design agent posted original SVG concepts inside the app.");
-  } catch (error) {
-    setAgentStatus("design", "idle", agents.design.idle);
-    designStudioStatus.textContent = error.message;
-    addManagerFeed(`Design generation failed: ${error.message}`);
-  } finally {
-    generateDesignButton.disabled = false;
-  }
-}
-
 async function runAgentPhase(agentKey, reportText, duration = 450) {
   const agent = agents[agentKey];
   setAgentStatus(agentKey, "working", agent?.active || "Working");
@@ -654,7 +635,7 @@ async function runReview(trigger) {
     await runAgentPhase("demand", review.popularityReasons?.[0] || review.signals?.[0], 300);
     await runAgentPhase("market", `${review.market || payload.market || "US"} market context collected.`, 300);
     await runAgentPhase("sales", review.salesSignal?.summary, 300);
-    await runAgentPhase("design", review.designStudio?.brief || review.designPlan?.direction || review.graphicElements?.[0], 420);
+    await runAgentPhase("design", review.designPlan?.direction || review.graphicElements?.[0], 420);
     await runAgentPhase("marketing", marketingPlan(review)[0], 420);
     await runAgentPhase("risk", review.watchouts?.[0], 360);
 
@@ -693,8 +674,8 @@ reviewNowButton.addEventListener("click", () => {
   runReview("manual");
 });
 
-generateDesignButton?.addEventListener("click", () => {
-  generateInAppDesigns();
+printReportButton?.addEventListener("click", () => {
+  printCurrentReport();
 });
 
 eventLog.addEventListener("click", (event) => {
@@ -722,5 +703,4 @@ state.countdownTimerId = window.setInterval(renderCountdown, 1000);
 setAllAgents("idle");
 renderCountdown();
 loadApiSources();
-fetchDesigns();
 runReview("initial");

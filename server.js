@@ -59,7 +59,7 @@ let cacheFetchedAt = 0;
 let cursor = 0;
 let categoryCursor = 0;
 let latestDesignBrief = null;
-let latestDesignStudio = null;
+let recentTrendIds = [];
 
 function sourceCatalog() {
   return [
@@ -91,12 +91,12 @@ function sourceCatalog() {
       where: "Marketplace",
     },
     {
-      id: "design-studio",
-      name: "In-app design agent",
+      id: "design-direction",
+      name: "Design direction agent",
       status: "active",
-      statusLabel: "Built in",
-      signal: "Generates original SVG merch concepts inside the app from the manager brief",
-      setup: "No external design tool required. Manual OpenAI reviews can improve the brief; visual rendering is handled in-app.",
+      statusLabel: "Art direction",
+      signal: "Evaluates design appeal, product fit, visual language, and commercial creative direction",
+      setup: "No image generation. The designer agent gives direction for human or downstream production work.",
       where: "Design workflow",
     },
     {
@@ -252,10 +252,111 @@ async function loadTrendArticles(force = false) {
   }
 
   const articles = await trendsRequest();
-  articleCache = articles.length ? articles.slice(0, Math.max(TREND_LIMIT, 3)) : fallbackArticles();
+  articleCache = rankedCommercialDesignArticles(articles);
   cacheFetchedAt = Date.now();
-  cursor = 0;
   return articleCache;
+}
+
+function trendArticleText(article) {
+  return `${article.title || ""} ${article.relatedHeadline || ""} ${article.source || ""}`.toLowerCase();
+}
+
+function trendId(article) {
+  return article.url && article.url !== "#"
+    ? article.url
+    : article.title || JSON.stringify(article).slice(0, 80);
+}
+
+function isUnsuitableTrend(article) {
+  const text = trendArticleText(article);
+  return /\b(death|dead|dies|died|killed|killing|murder|shooting|massacre|war|bomb|attack|terror|hostage|funeral|obituary|crash|accident|disaster|tragedy|tragic|earthquake|flood|wildfire|fire|hurricane|tornado|disease|outbreak|pandemic|abuse|assault|rape|missing|kidnapped|lawsuit|trial|sentenced|arrested|scotus|supreme court|court|judge|ruling|verdict|law|legal|congress|senate|president|election|politics|tariff)\b/.test(text);
+}
+
+function commercialDesignScore(article) {
+  const text = trendArticleText(article);
+  let score = 0;
+
+  if (article.traffic) {
+    score += 2;
+  }
+
+  if (article.image) {
+    score += 2;
+  }
+
+  if (/\b(style|fashion|outfit|aesthetic|color|design|interior|decor|beauty|makeup|hair|nails)\b/.test(text)) {
+    score += 5;
+  }
+
+  if (/\b(game|team|sports|finals|cup|tournament|race|stadium|season|holiday|festival|concert|tour|movie|album|show|celebrity)\b/.test(text)) {
+    score += 3;
+  }
+
+  if (/\b(shirt|tee|mug|tumbler|sticker|poster|tote|phone case|merch|gift|collectible|print|wall art)\b/.test(text)) {
+    score += 4;
+  }
+
+  if (/\b(recipe|food|drink|coffee|garden|travel|pet|fitness|wellness|home|school|graduation)\b/.test(text)) {
+    score += 2;
+  }
+
+  if (/\b(stock|politics|election|court|crime|weather|forecast)\b/.test(text)) {
+    score -= 3;
+  }
+
+  return score;
+}
+
+function rankedCommercialDesignArticles(articles) {
+  const ranked = (articles || [])
+    .filter((article) => !isUnsuitableTrend(article))
+    .map((article) => ({
+      article,
+      score: commercialDesignScore(article),
+    }))
+    .filter((entry) => entry.score >= 5)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, Math.max(TREND_LIMIT, 3))
+    .map((entry) => ({
+      ...entry.article,
+      commercialDesignScore: entry.score,
+    }));
+
+  if (ranked.length >= Math.min(TREND_LIMIT, 6)) {
+    return ranked;
+  }
+
+  const seen = new Set(ranked.map((article) => trendId(article)));
+  const fallbacks = fallbackArticles()
+    .filter((article) => !seen.has(trendId(article)))
+    .map((article) => ({
+      ...article,
+      commercialDesignScore: article.commercialDesignScore || commercialDesignScore(article),
+    }));
+
+  return [...ranked, ...fallbacks].slice(0, Math.max(TREND_LIMIT, 6));
+}
+
+function selectNextTrendArticle(articles) {
+  const usable = articles.length ? articles : fallbackArticles();
+
+  for (let attempt = 0; attempt < usable.length; attempt += 1) {
+    const article = usable[cursor % usable.length];
+    cursor += 1;
+    const id = trendId(article);
+
+    if (!recentTrendIds.includes(id)) {
+      recentTrendIds.unshift(id);
+      recentTrendIds = recentTrendIds.slice(0, Math.min(20, usable.length));
+      return article;
+    }
+  }
+
+  recentTrendIds = [];
+  const article = usable[cursor % usable.length];
+  cursor += 1;
+  recentTrendIds.unshift(trendId(article));
+  return article;
 }
 
 function parseTrendRss(xml) {
@@ -431,7 +532,7 @@ function outletCatalog(query, product) {
       status: PRINTIFY_API_TOKEN ? "connected" : "setup-needed",
       role: "Fastest print-on-demand route for tees, mugs, stickers, totes, and variants.",
       nextStep: PRINTIFY_API_TOKEN
-        ? "Use the approved in-app SVG concept to generate POD product drafts."
+        ? "Use the approved design direction to prepare POD product drafts."
         : "Create a Printify API token and add PRINTIFY_API_TOKEN.",
       link: "https://printify.com/app/account/api",
     },
@@ -499,7 +600,7 @@ function managerWorkplaceRecommendations(review, salesSignal) {
     recommendations.push("Revenue bottleneck: add a Shopify-owned storefront path so the team is not dependent on marketplace approval.");
   }
 
-  recommendations.push("Design workflow: the in-app Design agent can generate SVG concepts immediately; use external tools only for later polish.");
+  recommendations.push("Design workflow: keep the Design agent focused on commercial art direction, product fit, and production notes for a human designer.");
 
   if (salesSignal?.status !== "active") {
     recommendations.push("Evidence quality: Sales agent needs a connected outlet API or it can only report proxy links, not richer listing evidence.");
@@ -509,7 +610,7 @@ function managerWorkplaceRecommendations(review, salesSignal) {
     recommendations.push("Risk workflow: add a stricter IP/saturation checklist before any product upload for this cycle.");
   }
 
-  recommendations.push("Next workplace upgrade: add a Draft Product agent that turns approved in-app SVG concepts into Printify/Shopify draft payloads.");
+  recommendations.push("Next workplace upgrade: add a Draft Product agent that turns approved briefs into Printify/Shopify draft payloads.");
 
   return recommendations.slice(0, 6);
 }
@@ -600,7 +701,12 @@ async function fetchEtsySalesSignal(query, product) {
 }
 
 function reviewTrend(article) {
-  const category = productCategories[categoryCursor % productCategories.length];
+  const category = article.category
+    ? {
+        category: article.category,
+        products: article.products || productCategories[categoryCursor % productCategories.length].products,
+      }
+    : productCategories[categoryCursor % productCategories.length];
   categoryCursor += 1;
 
   const title = article.title || "Untitled trend signal";
@@ -612,6 +718,7 @@ function reviewTrend(article) {
   const signals = [];
   const watchouts = [];
   let score = 58;
+  const designFitScore = Number(article.commercialDesignScore || commercialDesignScore(article));
 
   if (article.traffic) {
     score += 12;
@@ -647,6 +754,13 @@ function reviewTrend(article) {
     signals.push("The article already has a merch-adjacent product signal.");
   }
 
+  if (designFitScore >= 6) {
+    score += 8;
+    signals.push(`Commercial design fit is strong (${designFitScore}/14): the topic has visual, product, fandom, lifestyle, or giftable hooks.`);
+  } else {
+    signals.push(`Commercial design fit is usable (${designFitScore}/14), but the designer should keep the concept broad and giftable.`);
+  }
+
   signals.push(`Where: Google Trends is reporting this in ${TREND_GEO}.`);
 
   if (!signals.length) {
@@ -671,19 +785,36 @@ function reviewTrend(article) {
     source: article.source || "Google Trends",
     market: TREND_GEO,
     evidence: article.traffic ? `Google Trends traffic: ${article.traffic}` : "Google Trends RSS placement",
+    suitability: {
+      status: "commercial-design-candidate",
+      score: designFitScore,
+      rejectedContentTypes: ["tragic news", "crime", "disaster", "death", "war", "legal/political news"],
+      reason: "Selected because it has enough commercial design appeal and passed the safety filter.",
+    },
     score,
     popularityReasons,
     graphicElements,
     designerBrief: buildDesignerBrief(title, product, popularityReasons, graphicElements),
     signals,
     watchouts,
-    summary: `Demand signal: this topic is moving in ${TREND_GEO} search trends. Use it as inspiration for a ${product}, then validate marketplace saturation before producing. Keep the design original, avoid protected marks, and translate the theme into colors, typography, phrases, or motifs rather than copying source artwork.`,
+    summary: `Demand signal: this topic is moving in ${TREND_GEO} search trends and passed the commercial design filter. Use it as inspiration for a ${product}, then validate marketplace saturation before producing. Keep the design original, avoid protected marks, and translate the theme into colors, typography, phrases, or motifs rather than copying source artwork.`,
   };
 }
 
 function buildImageResults(article) {
   if (!article.image) {
-    return [];
+    const title = article.title || "Trend visual research";
+    const encoded = encodeURIComponent(`${title} merch design trend`);
+    const imageText = encodeURIComponent(compactText(title, 42));
+
+    return [
+      {
+        title: `Visual research search: ${title}`,
+        url: `https://placehold.co/900x600/07140c/00ff66/png?text=${imageText}`,
+        source: "Visual research prompt",
+        link: `https://www.google.com/search?tbm=isch&q=${encoded}`,
+      },
+    ];
   }
 
   return [
@@ -808,265 +939,6 @@ function inferGraphicElements(title, text, product) {
 function buildDesignerBrief(title, product, popularityReasons, graphicElements) {
   return `Design brief for ${product}: create an original merch concept around "${title}". The reason to test it is ${popularityReasons[0].toLowerCase()} Start with ${graphicElements[0].replace("Primary motif: ", "").toLowerCase()} Keep the design ownable, simple enough for print, and clear without relying on protected marks.`;
 }
-
-function escapeSvg(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function designHash(value) {
-  return String(value || "").split("").reduce((hash, char) => {
-    return (hash * 31 + char.charCodeAt(0)) >>> 0;
-  }, 2166136261);
-}
-
-function paletteForReview(review) {
-  const palettes = [
-    {
-      name: "vintage athletic",
-      colors: ["#f4ead7", "#151515", "#b83a32", "#d8a847", "#2f5f52"],
-    },
-    {
-      name: "premium outdoor",
-      colors: ["#f8f0db", "#0f241d", "#d56537", "#6f8d5d", "#222222"],
-    },
-    {
-      name: "night market",
-      colors: ["#f7f2e8", "#101827", "#4da3ff", "#f3b23c", "#e45b7f"],
-    },
-    {
-      name: "studio neutral",
-      colors: ["#fbf6ea", "#1d1d1d", "#6b7cff", "#d64f3f", "#6d6a5d"],
-    },
-  ];
-  return palettes[designHash(review.title) % palettes.length];
-}
-
-function cleanDesignWords(review) {
-  const stopWords = new Set([
-    "the",
-    "and",
-    "for",
-    "with",
-    "from",
-    "this",
-    "that",
-    "into",
-    "after",
-    "before",
-    "world",
-    "official",
-  ]);
-  const words = String(review.title || review.category || "trend")
-    .replace(/[^a-z0-9\s]/gi, " ")
-    .split(/\s+/)
-    .map((word) => word.toLowerCase())
-    .filter((word) => word.length > 2 && !stopWords.has(word) && !/copyright|trademark|brand/i.test(word))
-    .slice(0, 5);
-
-  return words.length ? words : ["trend", "signal"];
-}
-
-function titleCaseWords(words) {
-  return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1));
-}
-
-function splitDisplayLines(words) {
-  const displayWords = titleCaseWords(words);
-
-  if (displayWords.length <= 1) {
-    return [displayWords[0] || "Trend", "Signal"];
-  }
-
-  if (displayWords.length === 2) {
-    return displayWords;
-  }
-
-  return [displayWords.slice(0, 2).join(" "), displayWords.slice(2, 4).join(" ") || "Edition"];
-}
-
-function fitFontSize(text, baseSize, minSize, maxChars) {
-  const overage = Math.max(0, String(text || "").length - maxChars);
-  return Math.max(minSize, baseSize - overage * 5);
-}
-
-function designMood(review) {
-  const text = `${review.title || ""} ${(review.graphicElements || []).join(" ")}`.toLowerCase();
-
-  if (/\b(team|game|finals|cup|stadium|baseball|basketball|soccer|football|hockey|racing|sports)\b/.test(text)) {
-    return {
-      label: "heritage sport",
-      symbol: "pennant",
-      texture: "halftone",
-    };
-  }
-
-  if (/\b(holiday|season|summer|winter|fall|spring|halloween|christmas|gift)\b/.test(text)) {
-    return {
-      label: "seasonal gift",
-      symbol: "spark",
-      texture: "stamp",
-    };
-  }
-
-  if (/\b(movie|album|tour|festival|concert|celebrity|singer|actor|pop)\b/.test(text)) {
-    return {
-      label: "poster culture",
-      symbol: "spotlight",
-      texture: "grain",
-    };
-  }
-
-  return {
-    label: "modern maker",
-    symbol: "badge",
-    texture: "grain",
-  };
-}
-
-function svgDefs(id, palette) {
-  const [paper, ink, primary, accent, shadow] = palette.colors;
-
-  return `<defs>
-  <filter id="${id}-roughen" x="-10%" y="-10%" width="120%" height="120%">
-    <feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" seed="${designHash(id) % 89}" result="noise"/>
-    <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.8"/>
-  </filter>
-  <pattern id="${id}-dots" width="28" height="28" patternUnits="userSpaceOnUse">
-    <circle cx="4" cy="4" r="2.2" fill="${primary}" opacity=".28"/>
-  </pattern>
-  <linearGradient id="${id}-fade" x1="0" x2="1" y1="0" y2="1">
-    <stop offset="0" stop-color="${paper}" stop-opacity=".18"/>
-    <stop offset="1" stop-color="${accent}" stop-opacity=".06"/>
-  </linearGradient>
-  <symbol id="${id}-pennant" viewBox="0 0 200 150">
-    <path d="M18 26h148l-34 48 34 48H18Z" fill="${primary}"/>
-    <path d="M36 48h82" stroke="${paper}" stroke-width="12" stroke-linecap="square"/>
-    <path d="M36 78h58" stroke="${paper}" stroke-width="12" stroke-linecap="square"/>
-  </symbol>
-  <symbol id="${id}-spark" viewBox="0 0 200 200">
-    <path d="M100 12 123 76 188 100 123 124 100 188 77 124 12 100 77 76Z" fill="${primary}"/>
-    <circle cx="100" cy="100" r="26" fill="${accent}"/>
-  </symbol>
-  <symbol id="${id}-spotlight" viewBox="0 0 200 200">
-    <path d="M44 172 100 20l56 152Z" fill="${primary}"/>
-    <circle cx="100" cy="84" r="38" fill="${paper}" opacity=".86"/>
-  </symbol>
-  <symbol id="${id}-badge" viewBox="0 0 200 200">
-    <path d="M100 16 170 52v80l-70 52-70-52V52Z" fill="${primary}"/>
-    <circle cx="100" cy="98" r="44" fill="${paper}" opacity=".9"/>
-  </symbol>
-</defs>`;
-}
-
-function buildDesignSvg(review, variant, index) {
-  const palette = paletteForReview(review);
-  const [paper, ink, primary, accent, shadow] = palette.colors;
-  const words = cleanDesignWords(review);
-  const [lineA, lineB] = splitDisplayLines(words);
-  const headline = escapeSvg(lineA.toUpperCase());
-  const secondary = escapeSvg(lineB.toUpperCase());
-  const subline = escapeSvg(`${review.product || "merch"} concept`.toUpperCase());
-  const cue = escapeSvg((review.graphicElements?.[0] || "Original symbol system").replace(/^Primary motif:\s*/i, ""));
-  const mood = designMood(review);
-  const id = `design-${variant}-${designHash(`${review.title}-${variant}`).toString(36)}`;
-  const symbol = `${id}-${mood.symbol}`;
-  const badgeText = escapeSvg(mood.label.toUpperCase());
-  const badgeHeadlineSize = fitFontSize(lineA, 116, 72, 12);
-  const badgeSecondarySize = fitFontSize(lineB, 88, 58, 12);
-  const editorialHeadlineSize = fitFontSize(lineA, 132, 76, 10);
-  const editorialSecondarySize = fitFontSize(lineB, 118, 70, 10);
-  const markHeadlineSize = fitFontSize(lineA, 112, 72, 12);
-  const markSecondarySize = fitFontSize(lineB, 82, 56, 12);
-
-  if (variant === "badge") {
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1500" role="img" aria-label="${headline} premium badge design">
-  ${svgDefs(id, palette)}
-  <rect width="1200" height="1500" fill="${paper}"/>
-  <rect x="58" y="58" width="1084" height="1384" fill="url(#${id}-fade)" stroke="${ink}" stroke-width="10"/>
-  <rect x="96" y="96" width="1008" height="1308" fill="none" stroke="${primary}" stroke-width="5" stroke-dasharray="28 22" opacity=".8"/>
-  <circle cx="600" cy="560" r="370" fill="${ink}"/>
-  <circle cx="600" cy="560" r="320" fill="${paper}" stroke="${primary}" stroke-width="22"/>
-  <circle cx="600" cy="560" r="250" fill="url(#${id}-dots)" stroke="${ink}" stroke-width="12"/>
-  <use href="#${symbol}" x="430" y="374" width="340" height="340" filter="url(#${id}-roughen)"/>
-  <path d="M230 930h740" stroke="${ink}" stroke-width="20"/>
-  <path d="M290 984h620" stroke="${primary}" stroke-width="8"/>
-  <text x="600" y="1068" text-anchor="middle" fill="${ink}" font-family="Arial Black, Impact, sans-serif" font-size="${badgeHeadlineSize}" font-weight="900" letter-spacing="-2">${headline}</text>
-  <text x="600" y="1172" text-anchor="middle" fill="${primary}" font-family="Arial Black, Impact, sans-serif" font-size="${badgeSecondarySize}" font-weight="900">${secondary}</text>
-  <text x="600" y="1264" text-anchor="middle" fill="${shadow}" font-family="Arial, sans-serif" font-size="34" font-weight="800" letter-spacing="10">${subline}</text>
-  <text x="600" y="1352" text-anchor="middle" fill="${ink}" font-family="Arial, sans-serif" font-size="28" opacity=".72">${badgeText} / LIMITED TEST</text>
-</svg>`;
-  }
-
-  if (variant === "type") {
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1500" role="img" aria-label="${headline} editorial typography design">
-  ${svgDefs(id, palette)}
-  <rect width="1200" height="1500" fill="${ink}"/>
-  <rect x="86" y="86" width="1028" height="1328" fill="${paper}"/>
-  <path d="M96 272h1008M96 1228h1008" stroke="${primary}" stroke-width="26"/>
-  <path d="M210 356h780v514H210Z" fill="${ink}"/>
-  <path d="M250 392h700v438H250Z" fill="none" stroke="${paper}" stroke-width="8"/>
-  <text x="600" y="560" text-anchor="middle" fill="${paper}" font-family="Arial Black, Impact, sans-serif" font-size="${editorialHeadlineSize}" font-weight="900" letter-spacing="-4">${headline}</text>
-  <text x="600" y="704" text-anchor="middle" fill="${primary}" font-family="Arial Black, Impact, sans-serif" font-size="${editorialSecondarySize}" font-weight="900" letter-spacing="-3">${secondary}</text>
-  <text x="600" y="804" text-anchor="middle" fill="${accent}" font-family="Arial, sans-serif" font-size="32" font-weight="900" letter-spacing="12">${badgeText}</text>
-  <use href="#${symbol}" x="72" y="974" width="170" height="170"/>
-  <use href="#${symbol}" x="958" y="974" width="170" height="170"/>
-  <text x="600" y="1076" text-anchor="middle" fill="${ink}" font-family="Arial, sans-serif" font-size="34" font-weight="800">${subline}</text>
-  <text x="600" y="1160" text-anchor="middle" fill="${shadow}" font-family="Arial, sans-serif" font-size="26" opacity=".74">${cue.slice(0, 78)}</text>
-</svg>`;
-  }
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1500" role="img" aria-label="${headline} illustrated merch system design">
-  ${svgDefs(id, palette)}
-  <rect width="1200" height="1500" fill="${paper}"/>
-  <rect width="1200" height="1500" fill="url(#${id}-dots)" opacity=".65"/>
-  <path d="M260 200h680l90 175-90 175H260l-90-175Z" fill="${ink}" filter="url(#${id}-roughen)"/>
-  <path d="M318 250h564l62 125-62 125H318l-62-125Z" fill="${paper}" stroke="${primary}" stroke-width="18"/>
-  <use href="#${symbol}" x="462" y="260" width="276" height="276"/>
-  <path d="M188 730c108-76 214-114 318-114 120 0 188 62 294 62 78 0 148-28 212-84" fill="none" stroke="${primary}" stroke-width="22" stroke-linecap="round"/>
-  <path d="M188 800c108-76 214-114 318-114 120 0 188 62 294 62 78 0 148-28 212-84" fill="none" stroke="${accent}" stroke-width="14" stroke-linecap="round"/>
-  <text x="600" y="960" text-anchor="middle" fill="${ink}" font-family="Arial Black, Impact, sans-serif" font-size="${markHeadlineSize}" font-weight="900" letter-spacing="-2">${headline}</text>
-  <text x="600" y="1062" text-anchor="middle" fill="${primary}" font-family="Arial Black, Impact, sans-serif" font-size="${markSecondarySize}" font-weight="900">${secondary}</text>
-  <rect x="298" y="1138" width="604" height="82" fill="${ink}"/>
-  <text x="600" y="1193" text-anchor="middle" fill="${paper}" font-family="Arial, sans-serif" font-size="30" font-weight="900" letter-spacing="8">${subline}</text>
-  <circle cx="210" cy="1178" r="34" fill="${accent}"/>
-  <circle cx="990" cy="1178" r="34" fill="${primary}"/>
-  <text x="600" y="1302" text-anchor="middle" fill="${shadow}" font-family="Arial, sans-serif" font-size="27">${cue.slice(0, 82)}</text>
-</svg>`;
-}
-
-function buildInAppDesignStudio(review, salesSignal) {
-  const variants = [
-    ["badge", "Retail badge system"],
-    ["type", "Editorial type lockup"],
-    ["pattern", "Illustrated merch mark"],
-  ].map(([variant, title], index) => ({
-    id: `${variant}-${designHash(`${review.title}-${variant}`).toString(36)}`,
-    title,
-    product: review.product,
-    format: /drink|mug|tumbler/i.test(review.product) ? "premium drinkware SVG" : "premium apparel SVG",
-    rationale: [
-      `${title} built with ${paletteForReview(review).name} palette, merch-safe typography, and an original ${designMood(review).label} symbol system.`,
-      review.graphicElements?.[index] || review.graphicElements?.[0] || "Original visual system from the trend brief.",
-      salesSignal?.topTags?.length
-        ? `Tag language considered: ${salesSignal.topTags.slice(0, 4).join(", ")}.`
-        : "Built from trend demand and manager direction while avoiding protected source artwork.",
-    ],
-    svg: buildDesignSvg(review, variant, index),
-  }));
-
-  return {
-    status: "generated",
-    generatedAt: new Date().toISOString(),
-    source: review.agentRuntime?.status === "active" ? "OpenAI-assisted agent brief" : "rule-based agent brief",
-    brief: review.designPlan?.direction || review.designerBrief || review.summary,
-    variants,
-  };
-}
-
 function shouldRunAiAgents(trigger) {
   if (!OPENAI_API_KEY || OPENAI_AGENT_MODE === "off") {
     return false;
@@ -1267,15 +1139,11 @@ function buildDesignPlan(review, salesSignal) {
   const salesOutlets = outletCatalog(review.title, review.product);
 
   return {
-    title: `In-app concept board: ${review.title}`,
+    title: `Design direction board: ${review.title}`,
     projectType,
     proofLevel,
-    direction: `Create an original ${review.product} concept for "${review.title}" using ${compactText(topVisualCue, 160).toLowerCase()}`,
+    direction: `Direct a human designer toward an original ${review.product} for "${review.title}" using ${compactText(topVisualCue, 160).toLowerCase()}`,
     salesSummary,
-    designStudio: {
-      status: "ready",
-      action: "Generate original SVG concepts inside the app.",
-    },
     salesOutlets,
     departments: {
       demand: review.aiReports?.demand || compactText(topReason, 160),
@@ -1300,12 +1168,12 @@ function buildDesignPlan(review, salesSignal) {
           `Audience test: buyers already searching "${review.category}" plus marketplace tags: ${topTags}.`,
           `Outlet ladder: start with ${salesOutlets[0].name}, validate POD with ${salesOutlets[1].name}, and keep Etsy/eBay as demand research until approved.`,
           "Offer ladder: launch one hero tee or mug, then adapt the same visual system to sticker/tote variants if the signal holds.",
-          "Creative test: produce two typography variations and one illustrated-symbol variation before committing production time.",
+          "Creative test: brief two typography variations and one illustrated-symbol variation before committing production time.",
         ],
     rollout: [
       "Research worker validates demand and current geography.",
       "Sales worker checks Etsy/eBay proxies plus Shopify, Printify, Printful, Gelato, and Amazon Merch outlet fit.",
-      "Design worker generates original SVG concept options directly inside the app.",
+      "Design worker writes art direction, visual guardrails, and product adaptation notes.",
       "Risk worker removes protected marks and flags saturation or event-timing problems.",
       "Manager ships only if fruit score, sales proxy, and visual clarity all stay above threshold.",
     ],
@@ -1352,7 +1220,7 @@ function enrichReviewWithSalesAndDesign(review, salesSignal) {
   enriched.designPlan = buildDesignPlan(enriched, salesSignal);
   enriched.salesOutlets = enriched.designPlan.salesOutlets;
   enriched.workplaceRecommendations = managerWorkplaceRecommendations(enriched, salesSignal);
-  enriched.designerBrief = `${enriched.designerBrief} Sales worker: ${salesSignal.summary} Design worker: generate in-app SVG concept options and a rollout plan.`;
+  enriched.designerBrief = `${enriched.designerBrief} Sales worker: ${salesSignal.summary} Design worker: write art direction, product notes, and a rollout plan; do not generate artwork.`;
 
   return enriched;
 }
@@ -1391,20 +1259,57 @@ function fallbackArticles() {
       url: "#",
       image: "",
       traffic: "fallback",
+      commercialDesignScore: 8,
     },
     {
+      category: "Cups",
+      products: ["ceramic mug", "travel tumbler"],
       title: "Personalized drinkware remains a strong gifting category",
       source: "fallback.local",
       url: "#",
       image: "",
       traffic: "fallback",
+      commercialDesignScore: 8,
     },
     {
+      category: "Merch",
+      products: ["sticker pack", "tote bag"],
       title: "Sticker and tote designs follow fandom and aesthetic microtrends",
       source: "fallback.local",
       url: "#",
       image: "",
       traffic: "fallback",
+      commercialDesignScore: 7,
+    },
+    {
+      category: "T-shirts",
+      products: ["graphic tee", "oversized shirt"],
+      title: "Coquette bow graphics and soft pink typography keep selling on giftable apparel",
+      source: "fallback.local",
+      url: "#",
+      image: "",
+      traffic: "fallback",
+      commercialDesignScore: 9,
+    },
+    {
+      category: "Cups",
+      products: ["travel tumbler", "ceramic mug"],
+      title: "Book club and reading era phrases are strong for mugs and tote bags",
+      source: "fallback.local",
+      url: "#",
+      image: "",
+      traffic: "fallback",
+      commercialDesignScore: 9,
+    },
+    {
+      category: "Merch",
+      products: ["sticker pack", "phone case", "poster"],
+      title: "Farmers market produce illustrations are working across stickers and kitchen gifts",
+      source: "fallback.local",
+      url: "#",
+      image: "",
+      traffic: "fallback",
+      commercialDesignScore: 8,
     },
   ];
 }
@@ -1414,8 +1319,7 @@ async function handleReview(request, response) {
     const url = new URL(request.url, `http://${request.headers.host}`);
     const force = url.searchParams.get("trigger") === "manual";
     const articles = await loadTrendArticles(force);
-    const article = articles[cursor % articles.length];
-    cursor += 1;
+    const article = selectNextTrendArticle(articles);
 
     const trigger = force ? "manual" : url.searchParams.get("trigger") || "scheduled";
     const baseReview = reviewTrend(article);
@@ -1427,13 +1331,10 @@ async function handleReview(request, response) {
     );
     review.designPlan = buildDesignPlan(review, salesSignal);
     review.salesOutlets = review.designPlan.salesOutlets;
-    review.designStudio = buildInAppDesignStudio(review, salesSignal);
-    latestDesignStudio = review.designStudio;
     latestDesignBrief = {
       review,
       salesSignal,
       designBrief: review.designPlan,
-      designStudio: review.designStudio,
       updatedAt: new Date().toISOString(),
     };
 
@@ -1442,7 +1343,6 @@ async function handleReview(request, response) {
       query: review.category,
       market: review.market,
       review,
-      designStudio: review.designStudio,
       fetchedAt: new Date(cacheFetchedAt).toISOString(),
     });
   } catch (error) {
@@ -1493,7 +1393,7 @@ function fallbackDesignBrief() {
     title: "Waiting for first trend review",
     score: 0,
     popularityReasons: ["Demand worker is waiting for the next trend scan."],
-    graphicElements: ["Design worker will generate the first visual system after a review."],
+    graphicElements: ["Design worker will write the first visual direction after a review."],
     watchouts: ["Connect Etsy and review the first trend before production."],
   };
   const salesSignal = publicSalesFallback(review.title, review.product);
@@ -1514,23 +1414,6 @@ function handleDesignBrief(request, response) {
   sendJson(response, 200, {
     ok: true,
     ...currentDesignPackage(),
-    designStudio: latestDesignStudio,
-  });
-}
-
-function handleDesigns(request, response) {
-  const designPackage = currentDesignPackage();
-  const designStudio = buildInAppDesignStudio(designPackage.review, designPackage.salesSignal);
-  latestDesignStudio = designStudio;
-
-  if (latestDesignBrief?.review) {
-    latestDesignBrief.review.designStudio = designStudio;
-    latestDesignBrief.designStudio = designStudio;
-  }
-
-  sendJson(response, request.method === "POST" ? 201 : 200, {
-    ok: true,
-    designStudio,
   });
 }
 
@@ -1567,11 +1450,6 @@ const server = http.createServer((request, response) => {
 
   if (request.method === "GET" && url.pathname === "/api/design-brief") {
     handleDesignBrief(request, response);
-    return;
-  }
-
-  if ((request.method === "GET" || request.method === "POST") && url.pathname === "/api/designs") {
-    handleDesigns(request, response);
     return;
   }
 
