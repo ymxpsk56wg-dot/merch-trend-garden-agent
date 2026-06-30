@@ -44,6 +44,14 @@ const countdownValue = document.querySelector("#countdownValue");
 const progressFill = document.querySelector("#progressFill");
 const eventLog = document.querySelector("#eventLog");
 const apiSourceList = document.querySelector("#apiSourceList");
+const managerDirective = document.querySelector("#managerDirective");
+const managerReason = document.querySelector("#managerReason");
+const demandRoomStatus = document.querySelector("#demandRoomStatus");
+const marketRoomStatus = document.querySelector("#marketRoomStatus");
+const designRoomStatus = document.querySelector("#designRoomStatus");
+const riskRoomStatus = document.querySelector("#riskRoomStatus");
+const workerNodes = document.querySelectorAll("[data-worker]");
+const projectNodes = document.querySelectorAll("[data-project]");
 
 function formatClock(date) {
   return new Intl.DateTimeFormat([], {
@@ -94,6 +102,87 @@ function setAgentState(phase, label) {
   agentTask.textContent = label;
   monitorText.textContent = phase === "researching" ? "LOOKUP..." : "TREND DB";
   carryCard.textContent = phase === "to-board" || phase === "posting" ? "TREND" : "";
+
+  workerNodes.forEach((worker) => {
+    worker.dataset.phase = phase;
+  });
+}
+
+function getFruitScore(review) {
+  const sourceDepth = Math.min(10, (review.sourceLinks?.length || 0) * 2);
+  const reasoningDepth = Math.min(10, (review.popularityReasons?.length || review.signals?.length || 0) * 2);
+  const imageSignal = review.image || review.imageResults?.length ? 6 : 0;
+  const designDepth = Math.min(8, (review.graphicElements?.length || 0) * 2);
+  const baseScore = Number(review.score) || 0;
+
+  return Math.min(100, Math.round(baseScore * 0.74 + sourceDepth + reasoningDepth + imageSignal + designDepth));
+}
+
+function getFruitTier(score) {
+  if (score >= 82) {
+    return "high";
+  }
+
+  if (score >= 64) {
+    return "medium";
+  }
+
+  return "low";
+}
+
+function getProjectType(review) {
+  const product = `${review.product || ""} ${review.title || ""}`.toLowerCase();
+
+  if (/cup|mug|tumbler|drink/.test(product)) {
+    return "cup";
+  }
+
+  if (/shirt|tee|t-shirt|apparel|hoodie/.test(product)) {
+    return "shirt";
+  }
+
+  return "gear";
+}
+
+function shortText(value, fallback, maxLength = 26) {
+  const text = value || fallback;
+
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, maxLength - 1)}...`;
+}
+
+function renderManagerGuidance(review, entry) {
+  const fruitScore = getFruitScore(review);
+  const fruitTier = getFruitTier(fruitScore);
+  const projectType = getProjectType(review);
+  const product = review.product || "merch";
+  const category = review.category || entry.query || "trend";
+  const market = review.market || entry.market || "US";
+
+  officeScene.dataset.fruitTier = fruitTier;
+  officeScene.dataset.projectFocus = projectType;
+  managerDirective.textContent = `${fruitScore}/100 fruit score: ${shortText(product, "merch project", 30)}`;
+  managerReason.textContent =
+    fruitTier === "high"
+      ? `Route all rooms toward ${shortText(category, "this trend", 28)} in ${market}.`
+      : `Keep scouting while ${shortText(category, "this trend", 28)} builds more proof.`;
+
+  demandRoomStatus.textContent = shortText(category, "Demand signal");
+  marketRoomStatus.textContent = `${market} proof`;
+  designRoomStatus.textContent = `${review.graphicElements?.length || 0} visual cues`;
+  riskRoomStatus.textContent = `${review.watchouts?.length || 0} watchouts`;
+
+  workerNodes.forEach((worker) => {
+    worker.dataset.priority = fruitTier;
+  });
+
+  projectNodes.forEach((projectNode) => {
+    projectNode.classList.toggle("is-focused", projectNode.dataset.project === projectType);
+    projectNode.dataset.priority = fruitTier;
+  });
 }
 
 function setList(list, items, fallback) {
@@ -194,6 +283,7 @@ function renderReviewEntry(entry) {
   boardCategory.textContent = review.category || entry.query || "Trend";
   boardTitle.textContent = review.title;
   boardProduct.textContent = review.product || "Merch design";
+  renderManagerGuidance(review, entry);
 
   setList(reasonList, review.popularityReasons || review.signals, "No popularity reasoning found in the trend metadata.");
   setList(elementList, review.graphicElements, "No graphical elements were inferred yet.");

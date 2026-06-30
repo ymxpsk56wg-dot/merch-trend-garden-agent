@@ -95,6 +95,27 @@
             <div class="wildflowers flowers-left" aria-hidden="true"></div>
             <div class="wildflowers flowers-right" aria-hidden="true"></div>
 
+            <div class="research-room room-demand office-object" aria-label="Demand research room">
+              <span class="room-label">Demand</span>
+              <strong id="demandRoomStatus">Search volume</strong>
+              <small>Trends, keywords, spikes</small>
+            </div>
+            <div class="research-room room-market office-object" aria-label="Marketplace research room">
+              <span class="room-label">Market</span>
+              <strong id="marketRoomStatus">Seller proof</strong>
+              <small>Etsy, eBay, source links</small>
+            </div>
+            <div class="research-room room-design office-object" aria-label="Design research room">
+              <span class="room-label">Design</span>
+              <strong id="designRoomStatus">Visual system</strong>
+              <small>Color, type, composition</small>
+            </div>
+            <div class="research-room room-risk office-object" aria-label="Risk research room">
+              <span class="room-label">Risk</span>
+              <strong id="riskRoomStatus">Watchouts</strong>
+              <small>Copy risk, saturation, timing</small>
+            </div>
+
             <div class="board office-object" aria-label="Digital trend board">
               <div class="board-header">
                 <span>Signal Board</span>
@@ -115,6 +136,17 @@
               <span class="hut-window hut-window-right"></span>
             </div>
 
+            <div class="manager-room office-object" aria-label="Manager command room">
+              <span class="room-label">Manager</span>
+              <strong id="managerDirective">Prioritize highest fruit score</strong>
+              <small id="managerReason">Waiting for enough signal to route the team.</small>
+              <div class="project-board" aria-hidden="true">
+                <span class="project-node project-shirt" data-project="shirt">T</span>
+                <span class="project-node project-cup" data-project="cup">C</span>
+                <span class="project-node project-gear" data-project="gear">P</span>
+              </div>
+            </div>
+
             <div class="desk office-object" aria-label="Agent desk">
               <div class="monitor">
                 <span id="monitorText">TREND DB</span>
@@ -128,6 +160,32 @@
             </div>
             <div class="file-cabinet office-object" aria-hidden="true"></div>
             <div class="market-crate office-object" aria-hidden="true"></div>
+
+            <div class="worker worker-demand" data-worker="demand" aria-label="Demand research worker">
+              <span class="worker-head"></span>
+              <span class="worker-body"></span>
+              <span class="worker-screen">KW</span>
+            </div>
+            <div class="worker worker-market" data-worker="market" aria-label="Marketplace research worker">
+              <span class="worker-head"></span>
+              <span class="worker-body"></span>
+              <span class="worker-screen">SELL</span>
+            </div>
+            <div class="worker worker-design" data-worker="design" aria-label="Design research worker">
+              <span class="worker-head"></span>
+              <span class="worker-body"></span>
+              <span class="worker-screen">ART</span>
+            </div>
+            <div class="worker worker-risk" data-worker="risk" aria-label="Risk research worker">
+              <span class="worker-head"></span>
+              <span class="worker-body"></span>
+              <span class="worker-screen">IP</span>
+            </div>
+            <div class="worker manager-worker" data-worker="manager" aria-label="Manager worker">
+              <span class="worker-head"></span>
+              <span class="worker-body"></span>
+              <span class="worker-screen">ROI</span>
+            </div>
 
             <div class="agent-shadow" aria-hidden="true"></div>
             <div class="trend-card-carry" id="carryCard" aria-hidden="true">TREND</div>
