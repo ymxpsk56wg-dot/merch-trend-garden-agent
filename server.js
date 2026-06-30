@@ -18,6 +18,11 @@ const ETSY_API_KEY =
   (process.env.ETSY_KEYSTRING && process.env.ETSY_SHARED_SECRET
     ? `${process.env.ETSY_KEYSTRING}:${process.env.ETSY_SHARED_SECRET}`
     : "");
+const PRINTIFY_API_TOKEN = process.env.PRINTIFY_API_TOKEN || "";
+const PRINTFUL_API_KEY = process.env.PRINTFUL_API_KEY || "";
+const SHOPIFY_STORE_URL = process.env.SHOPIFY_STORE_URL || "";
+const SHOPIFY_ADMIN_TOKEN = process.env.SHOPIFY_ADMIN_TOKEN || "";
+const GELATO_API_KEY = process.env.GELATO_API_KEY || "";
 
 const productCategories = [
   {
@@ -88,6 +93,42 @@ function sourceCatalog() {
       signal: "Creates a Figma concept board from the manager direction, sales proxy, design cues, and marketing plan",
       setup: "Install the generated plugin from /figma-plugin/manifest.json. Optional REST read/export can use FIGMA_ACCESS_TOKEN and FIGMA_FILE_KEY.",
       where: "Design workflow",
+    },
+    {
+      id: "printify",
+      name: "Printify API",
+      status: PRINTIFY_API_TOKEN ? "active" : "optional",
+      statusLabel: PRINTIFY_API_TOKEN ? "Token found" : "Optional token",
+      signal: "Print-on-demand product publishing, mockups, variants, and shop workflow",
+      setup: "Set PRINTIFY_API_TOKEN when ready to publish product drafts through Printify.",
+      where: "Print-on-demand",
+    },
+    {
+      id: "printful",
+      name: "Printful API",
+      status: PRINTFUL_API_KEY ? "active" : "optional",
+      statusLabel: PRINTFUL_API_KEY ? "Token found" : "Optional token",
+      signal: "Print-on-demand catalog, product templates, mockups, fulfillment, and orders",
+      setup: "Set PRINTFUL_API_KEY when ready to create product templates or fulfillment flows.",
+      where: "Print-on-demand",
+    },
+    {
+      id: "shopify",
+      name: "Shopify Admin API",
+      status: SHOPIFY_STORE_URL && SHOPIFY_ADMIN_TOKEN ? "active" : "optional",
+      statusLabel: SHOPIFY_STORE_URL && SHOPIFY_ADMIN_TOKEN ? "Store connected" : "Optional store",
+      signal: "Owned storefront, product pages, pricing, inventory, campaign landing pages, and checkout",
+      setup: "Set SHOPIFY_STORE_URL and SHOPIFY_ADMIN_TOKEN after creating a Shopify custom app.",
+      where: "Owned storefront",
+    },
+    {
+      id: "gelato",
+      name: "Gelato API",
+      status: GELATO_API_KEY ? "active" : "optional",
+      statusLabel: GELATO_API_KEY ? "Key found" : "Optional key",
+      signal: "Global print-on-demand production and fulfillment outlet",
+      setup: "Set GELATO_API_KEY when ready to automate Gelato product/fulfillment workflows.",
+      where: "Print-on-demand",
     },
     {
       id: "youtube",
@@ -355,6 +396,133 @@ function publicSalesFallback(query, product) {
   };
 }
 
+function outletCatalog(query, product) {
+  const keyword = toSearchTerm(query, product);
+  const encoded = encodeURIComponent(keyword);
+
+  return [
+    {
+      id: "shopify",
+      name: "Shopify owned store",
+      status: SHOPIFY_STORE_URL && SHOPIFY_ADMIN_TOKEN ? "connected" : "setup-needed",
+      role: "Best long-term outlet because you own the storefront, customer list, pixel, bundles, and pricing.",
+      nextStep: SHOPIFY_STORE_URL && SHOPIFY_ADMIN_TOKEN
+        ? "Create a draft product page once the manager approves the design."
+        : "Create a Shopify custom app and add SHOPIFY_STORE_URL plus SHOPIFY_ADMIN_TOKEN.",
+      link: SHOPIFY_STORE_URL || "https://www.shopify.com/",
+    },
+    {
+      id: "printify",
+      name: "Printify POD",
+      status: PRINTIFY_API_TOKEN ? "connected" : "setup-needed",
+      role: "Fastest print-on-demand route for tees, mugs, stickers, totes, and variants.",
+      nextStep: PRINTIFY_API_TOKEN
+        ? "Use the approved Figma artwork to generate POD product drafts."
+        : "Create a Printify API token and add PRINTIFY_API_TOKEN.",
+      link: "https://printify.com/app/account/api",
+    },
+    {
+      id: "printful",
+      name: "Printful POD",
+      status: PRINTFUL_API_KEY ? "connected" : "setup-needed",
+      role: "Useful for catalog validation, mockups, fulfillment, and backup POD production.",
+      nextStep: PRINTFUL_API_KEY
+        ? "Create template products and compare margins against Printify."
+        : "Create a Printful API token and add PRINTFUL_API_KEY.",
+      link: "https://developers.printful.com/",
+    },
+    {
+      id: "gelato",
+      name: "Gelato global POD",
+      status: GELATO_API_KEY ? "connected" : "setup-needed",
+      role: "Good global production outlet when shipping location and international fulfillment matter.",
+      nextStep: GELATO_API_KEY
+        ? "Use Gelato for global fulfillment comparison."
+        : "Create a Gelato API key and add GELATO_API_KEY.",
+      link: "https://dashboard.gelato.com/",
+    },
+    {
+      id: "ebay",
+      name: "eBay demand/sales research",
+      status: "research-ready",
+      role: "No-key fallback for checking listing language, price bands, and sold/listing competition.",
+      nextStep: "Use this immediately while Etsy approval is pending.",
+      link: `https://www.ebay.com/sch/i.html?_nkw=${encoded}`,
+    },
+    {
+      id: "etsy",
+      name: "Etsy marketplace proxy",
+      status: ETSY_API_KEY ? "connected" : "approval-pending",
+      role: "Best handmade/gift marketplace signal after Etsy app approval.",
+      nextStep: ETSY_API_KEY
+        ? "Pull active listings, tags, images, and price proxy data."
+        : "Keep Etsy as research-only until the key is approved.",
+      link: `https://www.etsy.com/search?q=${encoded}`,
+    },
+    {
+      id: "amazon-merch",
+      name: "Amazon Merch on Demand",
+      status: "manual-setup",
+      role: "Large marketplace outlet, but approval and upload workflows are not simple public API-first automation.",
+      nextStep: "Use manager-approved designs for manual upload after risk review.",
+      link: "https://merch.amazon.com/",
+    },
+  ];
+}
+
+function figmaConnectionStatus() {
+  const restConfigured = Boolean(process.env.FIGMA_ACCESS_TOKEN && process.env.FIGMA_FILE_KEY);
+
+  return {
+    status: restConfigured ? "rest-connected" : "plugin-ready",
+    pluginManifestUrl: `${PUBLIC_SITE_URL}/figma-plugin/manifest.json`,
+    pluginCodeUrl: `${PUBLIC_SITE_URL}/figma-plugin/code.js`,
+    fileKey: process.env.FIGMA_FILE_KEY || "",
+    nextSteps: restConfigured
+      ? [
+          "Figma REST token and file key are configured for file read/export checks.",
+          "Run the hosted Figma plugin inside your Figma account to create editable design boards.",
+        ]
+      : [
+          "Install the hosted Figma plugin from the manifest URL.",
+          "Run the plugin inside Figma; it fetches /api/design-brief and creates the editable concept board in your account.",
+          "Optional: add FIGMA_ACCESS_TOKEN and FIGMA_FILE_KEY for REST status checks.",
+        ],
+  };
+}
+
+function managerWorkplaceRecommendations(review, salesSignal) {
+  const recommendations = [];
+
+  if (!ETSY_API_KEY) {
+    recommendations.push("Sales bottleneck: Etsy is still approval-gated. Use eBay research plus Shopify/Printify setup while waiting for ETSY_API_KEY.");
+  }
+
+  if (!PRINTIFY_API_TOKEN && !PRINTFUL_API_KEY) {
+    recommendations.push("Production bottleneck: connect Printify or Printful next so approved designs can become product drafts instead of reports only.");
+  }
+
+  if (!SHOPIFY_STORE_URL || !SHOPIFY_ADMIN_TOKEN) {
+    recommendations.push("Revenue bottleneck: add a Shopify-owned storefront path so the team is not dependent on marketplace approval.");
+  }
+
+  if (!process.env.FIGMA_ACCESS_TOKEN || !process.env.FIGMA_FILE_KEY) {
+    recommendations.push("Design workflow: use the Figma plugin now, then add FIGMA_ACCESS_TOKEN and FIGMA_FILE_KEY for account/file status checks.");
+  }
+
+  if (salesSignal?.status !== "active") {
+    recommendations.push("Evidence quality: Sales agent needs a connected outlet API or it can only report proxy links, not richer listing evidence.");
+  }
+
+  if ((review.watchouts || []).length > 1) {
+    recommendations.push("Risk workflow: add a stricter IP/saturation checklist before any product upload for this cycle.");
+  }
+
+  recommendations.push("Next workplace upgrade: add a Draft Product agent that takes manager-approved Figma outputs and creates Printify/Shopify draft payloads.");
+
+  return recommendations.slice(0, 6);
+}
+
 async function fetchEtsySalesSignal(query, product) {
   const keyword = toSearchTerm(query, product);
 
@@ -565,6 +733,21 @@ function buildSourceLinks(title, article) {
       url: `https://www.ebay.com/sch/i.html?_nkw=${encoded}`,
       type: "marketplace",
     },
+    {
+      label: "Amazon Merch outlet",
+      url: "https://merch.amazon.com/",
+      type: "outlet",
+    },
+    {
+      label: "Printify product outlet",
+      url: "https://printify.com/app/account/api",
+      type: "outlet",
+    },
+    {
+      label: "Printful product outlet",
+      url: "https://developers.printful.com/",
+      type: "outlet",
+    },
   );
 
   return links;
@@ -649,6 +832,8 @@ function buildDesignPlan(review, salesSignal) {
   const topVisualCue = review.graphicElements?.[0] || "Create an original symbol system around the trend.";
   const topReason = review.popularityReasons?.[0] || review.signals?.[0] || "Current demand is moving.";
   const topTags = salesSignal?.topTags?.length ? salesSignal.topTags.slice(0, 5).join(", ") : "no marketplace tags yet";
+  const salesOutlets = outletCatalog(review.title, review.product);
+  const figmaConnection = figmaConnectionStatus();
 
   return {
     title: `Figma concept board: ${review.title}`,
@@ -657,10 +842,12 @@ function buildDesignPlan(review, salesSignal) {
     direction: `Create an original ${review.product} concept for "${review.title}" using ${compactText(topVisualCue, 160).toLowerCase()}`,
     salesSummary,
     figmaPlugin: {
-      manifestUrl: `${PUBLIC_SITE_URL}/figma-plugin/manifest.json`,
-      codeUrl: `${PUBLIC_SITE_URL}/figma-plugin/code.js`,
+      manifestUrl: figmaConnection.pluginManifestUrl,
+      codeUrl: figmaConnection.pluginCodeUrl,
       status: "plugin-ready",
     },
+    figmaConnection,
+    salesOutlets,
     departments: {
       demand: compactText(topReason, 160),
       sales: salesSummary,
@@ -678,13 +865,14 @@ function buildDesignPlan(review, salesSignal) {
     marketingPlan: [
       `Positioning: ${proofLevel}; lead with the trend mood, not protected names.`,
       `Audience test: buyers already searching "${review.category}" plus marketplace tags: ${topTags}.`,
+      `Outlet ladder: start with ${salesOutlets[0].name}, validate POD with ${salesOutlets[1].name}, and keep Etsy/eBay as demand research until approved.`,
       "Offer ladder: launch one hero tee or mug, then adapt the same visual system to sticker/tote variants if the signal holds.",
       "Creative test: produce two typography variations and one illustrated-symbol variation before committing production time.",
     ],
     rollout: [
       "Research worker validates demand and current geography.",
-      "Sales worker checks Etsy proxies, price bands, tags, and image patterns.",
-      "Design worker creates the Figma concept board and first layout options.",
+      "Sales worker checks Etsy/eBay proxies plus Shopify, Printify, Printful, Gelato, and Amazon Merch outlet fit.",
+      "Design worker creates the Figma concept board and first layout options in your Figma account through the hosted plugin.",
       "Risk worker removes protected marks and flags saturation or event-timing problems.",
       "Manager ships only if fruit score, sales proxy, and visual clarity all stay above threshold.",
     ],
@@ -729,6 +917,9 @@ function enrichReviewWithSalesAndDesign(review, salesSignal) {
   }
 
   enriched.designPlan = buildDesignPlan(enriched, salesSignal);
+  enriched.salesOutlets = enriched.designPlan.salesOutlets;
+  enriched.figmaConnection = enriched.designPlan.figmaConnection;
+  enriched.workplaceRecommendations = managerWorkplaceRecommendations(enriched, salesSignal);
   enriched.designerBrief = `${enriched.designerBrief} Sales worker: ${salesSignal.summary} Figma worker: use the design-plan plugin to create the concept board and rollout plan.`;
 
   return enriched;
@@ -839,6 +1030,18 @@ async function handleSales(request, response) {
       error: error.message,
     });
   }
+}
+
+function handleOutlets(request, response) {
+  const url = new URL(request.url, `http://${request.headers.host}`);
+  const query = url.searchParams.get("query") || "graphic tee";
+  const product = url.searchParams.get("product") || "merch design";
+
+  sendJson(response, 200, {
+    ok: true,
+    outlets: outletCatalog(query, product),
+    figmaConnection: figmaConnectionStatus(),
+  });
 }
 
 function fallbackDesignBrief() {
@@ -1012,7 +1215,7 @@ async function main() {
 
   const frame = figma.createFrame();
   frame.name = "Merch Trend Matrix - " + (review.title || "Design Brief");
-  frame.resize(1440, 1020);
+  frame.resize(1440, 1100);
   frame.fills = paint("#07140c");
   frame.x = figma.viewport.center.x - 720;
   frame.y = figma.viewport.center.y - 510;
@@ -1041,19 +1244,22 @@ async function main() {
   await addText(frame, "MARKETING PLAN", 770, 528, 420, 22, paint("#00ff66"), BOLD_FONT);
   await addText(frame, design.marketingPlan.map((item) => "- " + item).join("\\n"), 770, 578, 540, 18, paint("#ddffe9"));
 
-  await addText(frame, "PRINT PALETTE", 56, 850, 300, 22, paint("#c6ff6b"), BOLD_FONT);
+  await addText(frame, "SALES OUTLETS", 56, 830, 360, 22, paint("#c6ff6b"), BOLD_FONT);
+  await addText(frame, (design.salesOutlets || []).slice(0, 5).map((outlet) => "- " + outlet.name + ": " + outlet.nextStep).join("\\n"), 56, 876, 460, 16, paint("#ddffe9"));
+
+  await addText(frame, "MANAGER UPDATES", 590, 830, 360, 22, paint("#c6ff6b"), BOLD_FONT);
+  await addText(frame, (review.workplaceRecommendations || []).slice(0, 4).map((item) => "- " + item).join("\\n"), 590, 876, 730, 16, paint("#ddffe9"));
+
+  await addText(frame, "PRINT PALETTE", 56, 972, 300, 22, paint("#c6ff6b"), BOLD_FONT);
   design.palette.forEach((hex, index) => {
     const swatch = figma.createRectangle();
     swatch.x = 56 + index * 88;
-    swatch.y = 900;
-    swatch.resize(64, 64);
+    swatch.y = 1016;
+    swatch.resize(54, 54);
     swatch.fills = paint(hex);
     swatch.strokes = paint("#ddffe9");
     frame.appendChild(swatch);
   });
-
-  await addText(frame, "ROLLOUT", 590, 850, 260, 22, paint("#c6ff6b"), BOLD_FONT);
-  await addText(frame, design.rollout.map((item, index) => String(index + 1) + ". " + item).join("\\n"), 590, 898, 700, 17, paint("#ddffe9"));
 
   figma.currentPage.appendChild(frame);
   figma.viewport.scrollAndZoomIntoView([frame]);
@@ -1093,6 +1299,11 @@ const server = http.createServer((request, response) => {
 
   if (request.method === "GET" && url.pathname === "/api/sales") {
     handleSales(request, response);
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/outlets") {
+    handleOutlets(request, response);
     return;
   }
 

@@ -544,7 +544,7 @@ h3 {
 
 .report-deck {
   display: grid;
-  grid-template-columns: minmax(280px, 1.08fr) repeat(3, minmax(190px, 0.9fr));
+  grid-template-columns: minmax(280px, 1.08fr) repeat(4, minmax(180px, 0.9fr));
   gap: 10px;
   min-width: 0;
   min-height: 0;
@@ -648,11 +648,18 @@ h3 {
 
 .report-panel {
   min-width: 0;
-  min-height: 180px;
+  min-height: 170px;
   max-height: 330px;
   padding: 11px;
   overflow: auto;
   scrollbar-color: var(--matrix) rgba(0, 0, 0, 0.25);
+}
+
+.manager-updates-panel {
+  border-color: rgba(214, 255, 112, 0.58);
+  background:
+    linear-gradient(180deg, rgba(214, 255, 112, 0.08), rgba(0, 0, 0, 0.28)),
+    var(--panel);
 }
 
 ul {

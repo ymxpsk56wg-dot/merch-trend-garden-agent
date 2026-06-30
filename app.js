@@ -32,6 +32,9 @@ const summaryText = document.querySelector("#summaryText");
 const reasonList = document.querySelector("#reasonList");
 const elementList = document.querySelector("#elementList");
 const marketingPlanList = document.querySelector("#marketingPlanList");
+const figmaConnectionList = document.querySelector("#figmaConnectionList");
+const salesOutletList = document.querySelector("#salesOutletList");
+const managerRecommendationList = document.querySelector("#managerRecommendationList");
 const sourceLinkList = document.querySelector("#sourceLinkList");
 const watchoutList = document.querySelector("#watchoutList");
 const reviewNowButton = document.querySelector("#reviewNowButton");
@@ -292,12 +295,63 @@ function marketingPlan(review) {
   ];
 }
 
+function renderFigmaConnection(review) {
+  const connection = review.figmaConnection || review.designPlan?.figmaConnection;
+  const items = [];
+
+  if (connection?.pluginManifestUrl) {
+    items.push({
+      label: `Plugin manifest: ${connection.status || "plugin-ready"}`,
+      url: connection.pluginManifestUrl,
+      type: "figma",
+    });
+  }
+
+  if (connection?.pluginCodeUrl) {
+    items.push({
+      label: "Plugin code",
+      url: connection.pluginCodeUrl,
+      type: "figma",
+    });
+  }
+
+  (connection?.nextSteps || []).forEach((step) => {
+    items.push({
+      label: step,
+      url: connection.pluginManifestUrl || "#",
+      type: "figma",
+    });
+  });
+
+  setSourceLinks(figmaConnectionList, items.length ? items : [{
+    label: "Figma plugin is waiting for the first design brief.",
+    url: "/figma-plugin/manifest.json",
+    type: "figma",
+  }]);
+}
+
+function renderSalesOutlets(review) {
+  const outlets = review.salesOutlets || review.designPlan?.salesOutlets || [];
+  const links = outlets.map((outlet) => ({
+    label: `${outlet.name} - ${outlet.status}: ${outlet.nextStep}`,
+    url: outlet.link || "#",
+    type: "outlet",
+  }));
+
+  setSourceLinks(salesOutletList, links.length ? links : [{
+    label: "No sales outlets were generated yet.",
+    url: "/api/outlets",
+    type: "outlet",
+  }]);
+}
+
 function renderAgentReports(review, entry) {
   const demandLine = review.popularityReasons?.[0] || review.signals?.[0] || "Demand signal is still forming.";
   const marketLine = `Market: ${review.market || entry.market || "US"} via ${sourceLabel(entry.source)}. ${review.evidence || "Trend source is active."}`;
   const salesLine = review.salesSignal?.summary || "Sales proxy is waiting for Etsy configuration.";
   const designLine = review.designPlan?.direction || review.graphicElements?.[0] || "Design direction is still forming.";
   const marketingLine = marketingPlan(review)[0];
+  const outletCount = review.salesOutlets?.length || review.designPlan?.salesOutlets?.length || 0;
   const riskLine = review.watchouts?.[0] || "No major watchout detected, but review saturation and IP before launch.";
 
   demandRoomStatus.textContent = shortText(review.category, "Demand signal", 36);
@@ -311,10 +365,10 @@ function renderAgentReports(review, entry) {
   riskRoomStatus.textContent = `${review.watchouts?.length || 0} watchouts`;
 
   demandReport.textContent = demandLine;
-  marketReport.textContent = marketLine;
   salesReport.textContent = salesLine;
-  designReport.textContent = designLine;
+  designReport.textContent = `${designLine} Figma connection: ${(review.figmaConnection || review.designPlan?.figmaConnection)?.status || "plugin-ready"}.`;
   marketingReport.textContent = marketingLine;
+  marketReport.textContent = `${marketLine} ${outletCount} sales outlets are available for routing.`;
   riskReport.textContent = riskLine;
 }
 
@@ -336,6 +390,9 @@ function renderManagerDecision(review, entry) {
         : `Hold for scouting: ${category} needs stronger proof before production.`;
 
   addManagerFeed(`${fruitTier.toUpperCase()} priority on ${product}: ${managerReason.textContent}`);
+  if (review.workplaceRecommendations?.[0]) {
+    addManagerFeed(`Workplace update suggested: ${review.workplaceRecommendations[0]}`);
+  }
 }
 
 function createHistoryEntry(payload) {
@@ -384,6 +441,9 @@ function renderReviewEntry(entry) {
   setList(reasonList, review.popularityReasons || review.signals, "No popularity reasoning found in the trend metadata.");
   setList(elementList, review.graphicElements, "No graphical elements were inferred yet.");
   setList(marketingPlanList, marketingPlan(review), "No marketing plan generated yet.");
+  renderFigmaConnection(review);
+  renderSalesOutlets(review);
+  setList(managerRecommendationList, review.workplaceRecommendations, "No manager workplace updates generated yet.");
   setList(designPlanList, review.designPlan?.rollout, "No production rollout generated yet.");
   setSourceLinks(sourceLinkList, review.sourceLinks);
   setList(watchoutList, review.watchouts, "No obvious watchouts from the trend metadata.");

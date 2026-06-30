@@ -37,6 +37,7 @@ Additional easy setup access points are listed by the app at `/api/sources`:
 - eBay Browse API: optional free developer account/OAuth token; useful for listings, prices, seller locations, and marketplace-specific demand proxies.
 - Etsy Open API: optional free developer app key; useful for public active-listing sales proxies such as listing images, tags, prices, and favorite-count signals. Broad verified sold-count data is not exposed through public marketplace search; private shop receipts require OAuth.
 - Figma design department: plugin-ready endpoint that turns the latest trend, Sales signal, design cues, and manager rollout into a Figma concept board.
+- Printify, Printful, Shopify, and Gelato: optional outlet connectors for product drafts, owned storefronts, and print-on-demand fulfillment after Etsy approval or instead of Etsy.
 - YouTube Data API: optional Google Cloud API key; useful for design-content velocity and niche discovery.
 - GDELT Doc API: no key, but throttle requests; useful for news/media trend coverage and geography hints.
 
@@ -52,6 +53,11 @@ export YOUTUBE_API_KEY=""
 export APP_PUBLIC_URL="https://merch-trend-garden-agent-production.up.railway.app"
 export FIGMA_ACCESS_TOKEN=""
 export FIGMA_FILE_KEY=""
+export PRINTIFY_API_TOKEN=""
+export PRINTFUL_API_KEY=""
+export SHOPIFY_STORE_URL=""
+export SHOPIFY_ADMIN_TOKEN=""
+export GELATO_API_KEY=""
 ```
 
 Check the backend directly:
@@ -61,6 +67,7 @@ curl http://localhost:4173/api/health
 curl http://localhost:4173/api/sources
 curl http://localhost:4173/api/review
 curl "http://localhost:4173/api/sales?query=graphic%20tee"
+curl "http://localhost:4173/api/outlets?query=graphic%20tee"
 curl http://localhost:4173/api/design-brief
 curl http://localhost:4173/api/figma/status
 ```
