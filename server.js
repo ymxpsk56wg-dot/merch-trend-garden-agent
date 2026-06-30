@@ -56,7 +56,29 @@ let cursor = 0;
 let categoryCursor = 0;
 let latestDesignBrief = null;
 
+function normalizedFigmaFileKey(value = process.env.FIGMA_FILE_KEY || "") {
+  const text = String(value || "").trim();
+
+  if (!text) {
+    return "";
+  }
+
+  const urlMatch = text.match(/figma\.com\/(?:file|design)\/([^/?#]+)/i);
+
+  if (urlMatch) {
+    return urlMatch[1];
+  }
+
+  return text.split(/[/?#]/)[0];
+}
+
+function hasFigmaRestConfig() {
+  return Boolean(process.env.FIGMA_ACCESS_TOKEN && normalizedFigmaFileKey());
+}
+
 function sourceCatalog() {
+  const figmaRestConfigured = hasFigmaRestConfig();
+
   return [
     {
       id: "google-trends",
@@ -88,8 +110,8 @@ function sourceCatalog() {
     {
       id: "figma",
       name: "Figma design department",
-      status: "plugin-ready",
-      statusLabel: "Plugin ready",
+      status: figmaRestConfigured ? "active" : "plugin-ready",
+      statusLabel: figmaRestConfigured ? "Token and file found" : "Plugin ready",
       signal: "Creates a Figma concept board from the manager direction, sales proxy, design cues, and marketing plan",
       setup: "Install the generated plugin from /figma-plugin/manifest.json. Optional REST read/export can use FIGMA_ACCESS_TOKEN and FIGMA_FILE_KEY.",
       where: "Design workflow",
@@ -471,13 +493,14 @@ function outletCatalog(query, product) {
 }
 
 function figmaConnectionStatus() {
-  const restConfigured = Boolean(process.env.FIGMA_ACCESS_TOKEN && process.env.FIGMA_FILE_KEY);
+  const fileKey = normalizedFigmaFileKey();
+  const restConfigured = Boolean(process.env.FIGMA_ACCESS_TOKEN && fileKey);
 
   return {
     status: restConfigured ? "rest-connected" : "plugin-ready",
     pluginManifestUrl: `${PUBLIC_SITE_URL}/figma-plugin/manifest.json`,
     pluginCodeUrl: `${PUBLIC_SITE_URL}/figma-plugin/code.js`,
-    fileKey: process.env.FIGMA_FILE_KEY || "",
+    fileKey,
     nextSteps: restConfigured
       ? [
           "Figma REST token and file key are configured for file read/export checks.",
@@ -506,7 +529,7 @@ function managerWorkplaceRecommendations(review, salesSignal) {
     recommendations.push("Revenue bottleneck: add a Shopify-owned storefront path so the team is not dependent on marketplace approval.");
   }
 
-  if (!process.env.FIGMA_ACCESS_TOKEN || !process.env.FIGMA_FILE_KEY) {
+  if (!process.env.FIGMA_ACCESS_TOKEN || !normalizedFigmaFileKey()) {
     recommendations.push("Design workflow: use the Figma plugin now, then add FIGMA_ACCESS_TOKEN and FIGMA_FILE_KEY for account/file status checks.");
   }
 
@@ -1072,6 +1095,7 @@ function handleDesignBrief(request, response) {
 }
 
 async function handleFigmaStatus(request, response) {
+  const fileKey = normalizedFigmaFileKey();
   const status = {
     ok: true,
     plugin: {
@@ -1080,18 +1104,18 @@ async function handleFigmaStatus(request, response) {
       codeUrl: `${PUBLIC_SITE_URL}/figma-plugin/code.js`,
     },
     rest: {
-      status: process.env.FIGMA_ACCESS_TOKEN && process.env.FIGMA_FILE_KEY ? "configured" : "optional",
+      status: process.env.FIGMA_ACCESS_TOKEN && fileKey ? "configured" : "optional",
       setup: "Set FIGMA_ACCESS_TOKEN and FIGMA_FILE_KEY only if you want REST read/export checks. Creating designs is handled by the plugin.",
     },
   };
 
-  if (!process.env.FIGMA_ACCESS_TOKEN || !process.env.FIGMA_FILE_KEY) {
+  if (!process.env.FIGMA_ACCESS_TOKEN || !fileKey) {
     sendJson(response, 200, status);
     return;
   }
 
   try {
-    const figmaUrl = new URL(`https://api.figma.com/v1/files/${process.env.FIGMA_FILE_KEY}`);
+    const figmaUrl = new URL(`https://api.figma.com/v1/files/${fileKey}`);
     figmaUrl.searchParams.set("depth", "1");
     const figmaResponse = await fetchWithTimeout(
       figmaUrl,
